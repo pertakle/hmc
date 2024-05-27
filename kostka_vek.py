@@ -40,7 +40,8 @@ def tahni_tah_vek(kostka: KostkaVek, tah: np.ndarray) -> None:
     kostka[smer_proti_idx, abs_tah[smer_proti_idx]] = np.rot90(kostka[smer_proti_idx, abs_tah[smer_proti_idx]], -1, (1,2))
     
     ar = np.arange(len(kostka)).reshape([-1,1])
-    kostka[ar, *okoli] = kostka[ar, *okoli_posun]
+    #kostka[ar, *okoli] = kostka[ar, *okoli_posun]
+    kostka[ar, okoli[0], okoli[1], okoli[2]] = kostka[ar, okoli_posun[0], okoli_posun[1], okoli_posun[2]] # kvůli pythonu 3.10
 
 
 def tahni_tahy_vek(kostka: KostkaVek, tahy: np.ndarray) -> None:

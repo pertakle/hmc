@@ -42,7 +42,8 @@ def tahni_tah(kostka: Kostka, tah: int) -> None:
     okoli_posun = ut.OKOLI_POSUN[smer_01, abs_tah]
 
     kostka[abs_tah] = np.rot90(kostka[abs_tah], smer_11)
-    kostka[*okoli] = kostka[*okoli_posun]
+    #kostka[*okoli] = kostka[*okoli_posun]
+    kostka[okoli[0], okoli[1], okoli[2]] = kostka[okoli_posun[0], okoli_posun[1], okoli_posun[2]] # kvůli pythonu 3.10
     
 
 
