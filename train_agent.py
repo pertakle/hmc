@@ -18,7 +18,7 @@ def generate_batch(kostek: int, tahu: int) -> tuple[np.ndarray, np.ndarray]:
 
     return data, target
 
-
+# TODO: EvalSolveCallback
 def evaluate_solve(agent: Agent, kostek: int, tahu: int, limit: int) -> int:
     k = kv.nova_kostka_vek(kostek)
     tahy = np.random.randint(1, 7, [tahu, kostek]) * np.random.choice([-1, 1], [tahu, kostek])
@@ -38,10 +38,10 @@ def evaluate_solve(agent: Agent, kostek: int, tahu: int, limit: int) -> int:
             kk = moznosti[np.argmin(pred)]
     return slozeno
 
-def evaluate(agent: Agent, kostek: int, tahu: int) -> float:
+def evaluate(agent: Agent, kostek: int, tahu: int) -> np.floating:
     d, t = generate_batch(kostek, tahu)
     pred = agent.predict(d)
-    return np.count_nonzero(t == pred) / len(t)
+    return np.mean((pred - t)**2)
 
 def train_agent(batch_size: int, 
                 sample_moves: int, 
@@ -54,14 +54,13 @@ def train_agent(batch_size: int,
         for _ in range(eval_each):
             data, target = generate_batch(batch_size, sample_moves)
             agent.train(data, target)
-        acc = evaluate(agent, eval_batch_size, eval_sample_moves)
         slozenych = evaluate_solve(agent, eval_batch_size, eval_sample_moves, eval_lim)
-        print(f"Evaluation after {ep+1} epochs: acc {acc:.4f} - solved {slozenych}/{eval_batch_size}")
+        print(f"Evaluation after {ep+1} epochs:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent.info.items())), f"- solved {slozenych}/{eval_batch_size}")
     return agent
 
 if __name__ == "__main__":
     train_agent(
-        batch_size=128,
+        batch_size=10_000,
         sample_moves=27,
         eval_each=100,
         eval_batch_size=10,

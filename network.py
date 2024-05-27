@@ -55,7 +55,9 @@ class Agent:
     def __init__(self):
         self.network = Network().to(self.device)
         self.opt = torch.optim.Adam(self.network.parameters())
-        self.loss = torch.nn.CrossEntropyLoss()
+        self.loss = torch.nn.MSELoss()
+        self.values = torch.arange(27, dtype=torch.float32, device=self.device) # 0...26 = biží číslo
+        self.info = {}
         
 
     @wrappers.typed_torch_function(device, torch.float32)
@@ -63,15 +65,20 @@ class Agent:
         self.network.eval()
         with torch.no_grad():
             logits = self.network(x)
-        return torch.argmax(logits, 1)
+        probs = torch.nn.functional.softmax(logits, -1)
+        values = probs @ self.values
+        return values
 
-    @wrappers.typed_torch_function(device, torch.float32, torch.long)
+    @wrappers.typed_torch_function(device, torch.float32, torch.float32)
     def train(self, x, t):
         self.network.train()
         self.opt.zero_grad()
-        y = self.network(x)
+        logits = self.network(x)
+        y = torch.nn.functional.softmax(logits, -1) @ self.values
         loss = self.loss(y, t)
         loss.backward()
         with torch.no_grad():
             self.opt.step()
+
+        self.info["mse_loss"] = loss.item()
 
