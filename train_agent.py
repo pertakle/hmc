@@ -44,7 +44,7 @@ def evaluate(agent: Agent, kostek: int, tahu: int) -> np.floating:
     pred = agent.predict(d)
     return np.mean((pred - t)**2)
 
-def train_agent(epochs: int,
+def train_agent(steps: int,
                 batch_size: int, 
                 sample_moves: int, 
                 eval_each: int, 
@@ -52,12 +52,13 @@ def train_agent(epochs: int,
                 eval_sample_moves: int,
                 eval_lim: int) -> Agent:
     agent = Agent()
-    for ep in range(epochs):
-        for _ in range(eval_each):
-            data, target = generate_batch(batch_size, sample_moves)
-            agent.train(data, target)
-        slozenych = evaluate_solve(agent, eval_batch_size, eval_sample_moves, eval_lim)
-        print(f"Evaluation after {ep+1} epochs:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent.info.items())), f"- solved {slozenych}/{eval_batch_size}")
+    for step in range(steps):
+        data, target = generate_batch(batch_size, sample_moves)
+        agent.train(data, target)
+
+        if (step % eval_each) == 0:
+            slozenych = evaluate_solve(agent, eval_batch_size, eval_sample_moves, eval_lim)
+            print(f"Evaluation after {step+1} steps:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent.info.items())), f"- solved {slozenych}/{eval_batch_size}")
     return agent
 
 
@@ -90,23 +91,25 @@ def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tupl
 def train_value_iteration(steps: int,
                           batch_size: int,
                           sample_moves: int,
-                          epsilon: float,
+                          copy_each: int,
                           eval_each: int,
                           eval_batch_size: int,
                           eval_sample_moves: int,
                           eval_lim: int) -> Agent:
     agent_behave = Agent()
     agent_target = deepcopy(agent_behave)
-    for step in range(steps):
+    for step in range(1, steps + 1):
         data, target = generate_val_iter_batch(agent_target, batch_size, sample_moves)
         agent_behave.train(data, target)
 
-        if (steps % eval_each) == 0: 
-            slozenych = evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
-            print(f"Evaluation after {step+1} steps:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent_behave.info.items())), f"- solved {slozenych}/{eval_batch_size}")
+        if (step % copy_each) == 0:
+            #print("Copying parameters.")
+            agent_target = deepcopy(agent_behave)
 
-            if agent_behave.info["mse_loss"] < epsilon:
-                agent_target = deepcopy(agent_behave)
+        if (step % eval_each) == 0: 
+            slozenych = evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
+            print(f"Evaluation after {step} steps:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent_behave.info.items())), f"- solved {slozenych}/{eval_batch_size}")
+
     return agent_behave
 
 
@@ -115,21 +118,21 @@ def train_value_iteration(steps: int,
 if __name__ == "__main__":
     train_value_iteration(
         steps=100_000,
-        batch_size=512,
-        sample_moves=26,
-        epsilon=0.05,
-        eval_each=1000,
+        batch_size=64,
+        sample_moves=10,
+        copy_each=50,
+        eval_each=100,
         eval_batch_size=10,
-        eval_sample_moves=15,
+        eval_sample_moves=5,
         eval_lim=30
     )
     exit()
     train_agent(
-        epochs=100_000,
-        batch_size=128,
-        sample_moves=15,
-        eval_each=100,
+        steps=5,
+        batch_size=8,
+        sample_moves=26,
+        eval_each=1000,
         eval_batch_size=10,
-        eval_sample_moves=7,
+        eval_sample_moves=15,
         eval_lim=30
     )
