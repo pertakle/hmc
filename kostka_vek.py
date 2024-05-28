@@ -1,12 +1,15 @@
 import utils as ut
-import kostka as k
+import kostka as ko
 import numpy as np
 
 
 KostkaVek = np.ndarray
 
 def nova_kostka_vek(n: int) -> KostkaVek:
-    return np.stack([k.SLOZENA_KOSTKA]*n)
+    return np.stack([ko.SLOZENA_KOSTKA]*n)
+
+def je_slozena(kostka: KostkaVek) -> bool:
+    return np.all(kostka == ko.SLOZENA_KOSTKA, axis=(1,2,3))
 
 
 def print_kostku_vek(kostka: KostkaVek) -> None:
@@ -55,3 +58,4 @@ def tahni_tahy_vek(kostka: KostkaVek, tahy: np.ndarray) -> None:
     """
     for tah in tahy:
         tahni_tah_vek(kostka, tah)
+
