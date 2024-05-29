@@ -39,10 +39,6 @@ def evaluate_solve(agent: Agent, kostek: int, tahu: int, limit: int) -> int:
             kk = moznosti[np.argmin(pred)]
     return slozeno
 
-def evaluate(agent: Agent, kostek: int, tahu: int) -> np.floating:
-    d, t = generate_batch(kostek, tahu)
-    pred = agent.predict(d)
-    return np.mean((pred - t)**2)
 
 def train_agent(steps: int,
                 batch_size: int, 
@@ -52,13 +48,13 @@ def train_agent(steps: int,
                 eval_sample_moves: int,
                 eval_lim: int) -> Agent:
     agent = Agent()
-    for step in range(steps):
+    for step in range(1, steps + 1):
         data, target = generate_batch(batch_size, sample_moves)
         agent.train(data, target)
 
         if (step % eval_each) == 0:
             slozenych = evaluate_solve(agent, eval_batch_size, eval_sample_moves, eval_lim)
-            print(f"Evaluation after {step+1} steps:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent.info.items())), f"- solved {slozenych}/{eval_batch_size}")
+            print(f"Evaluation after {step} steps:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent.info.items())), f"- solved {slozenych}/{eval_batch_size}")
     return agent
 
 
@@ -67,26 +63,32 @@ def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tupl
     FEATUR = 54
     VSECHNY_TAHY = np.hstack([np.arange(1, 7), -np.arange(1,7)]*kostek)
     k = kv.nova_kostka_vek(kostek)
-    data = np.empty([kostek*tahu, FEATUR], dtype=np.uint8)
-    target = np.zeros([kostek*tahu], dtype=np.uint8)
-    tahy = np.random.randint(1, 7, [tahu, kostek]) * np.random.choice([-1, 1], [tahu, kostek])
-    
-    for i, tah in enumerate(tahy):
-        kv.tahni_tah_vek(k, tah)
+    max_tahu = np.random.randint(0, tahu+1, [kostek])
+    active_indices = np.arange(kostek)
 
-        moznosti = np.repeat(k, 12, axis=0)
-        kv.tahni_tah_vek(moznosti, VSECHNY_TAHY)
+    for i in range(tahu): 
+        active_indices = active_indices[max_tahu[active_indices] > i]
+        if len(active_indices) == 0:
+            break
+        rnd_tah = np.random.randint(1, 7, [len(active_indices)]) * np.random.choice([-1, 1], [len(active_indices)])
+        kv.tahni_tah_vek(k[active_indices], rnd_tah)
+        active_indices = active_indices[max_tahu[active_indices] > i]
+    data = k.reshape([kostek, FEATUR])
 
-        predikce = agent_target.predict(moznosti)
-        predikce *= np.logical_not(kv.je_slozena(moznosti)) # slozene maji 0
-        predikce = predikce.reshape([kostek, 12])
+    moznosti = np.repeat(k, 12, axis=0)
+    kv.tahni_tah_vek(moznosti, VSECHNY_TAHY)
 
-        hodnoty = np.min(predikce, axis=1) + 1
-
-        target[i*kostek : (i+1)*kostek] = hodnoty
-        data[i*kostek : (i+1)*kostek] = k.reshape([kostek, FEATUR])
+    predikce = agent_target.predict(moznosti)
+    predikce= predikce * np.logical_not(kv.je_slozena(moznosti))
+    predikce = predikce.reshape([kostek, 12])
+    target = np.min(predikce, axis=1) + 1
+    target *= max_tahu > 0 # pro nezamichane nas min synu nezajima
 
     return data, target
+    
+    
+def format_float(x: float) -> str:
+    return f"{x:.4f}" if x >= 1e-4 else f"{x:.4e}"
 
 def train_value_iteration(steps: int,
                           batch_size: int,
@@ -103,12 +105,11 @@ def train_value_iteration(steps: int,
         agent_behave.train(data, target)
 
         if (step % copy_each) == 0:
-            #print("Copying parameters.")
             agent_target = deepcopy(agent_behave)
 
         if (step % eval_each) == 0: 
             slozenych = evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
-            print(f"Evaluation after {step} steps:", " - ".join(map(lambda x: f"{x[0]} {x[1]:.4f}", agent_behave.info.items())), f"- solved {slozenych}/{eval_batch_size}")
+            print(f"Evaluation after {step} steps:", " - ".join(map(lambda x: f"{x[0]} {format_float(x[1])}", agent_behave.info.items())), f"- solved {slozenych}/{eval_batch_size}")
 
     return agent_behave
 
@@ -116,23 +117,24 @@ def train_value_iteration(steps: int,
 
 
 if __name__ == "__main__":
-    train_value_iteration(
-        steps=100_000,
-        batch_size=64,
-        sample_moves=10,
-        copy_each=50,
-        eval_each=100,
-        eval_batch_size=10,
-        eval_sample_moves=5,
-        eval_lim=30
-    )
-    exit()
-    train_agent(
-        steps=5,
-        batch_size=8,
-        sample_moves=26,
-        eval_each=1000,
-        eval_batch_size=10,
-        eval_sample_moves=15,
-        eval_lim=30
-    )
+    if True:
+        train_value_iteration(
+            steps=1_000_000,
+            batch_size=1024,
+            sample_moves=26,
+            copy_each=100,
+            eval_each=100,
+            eval_batch_size=10,
+            eval_sample_moves=5,
+            eval_lim=10
+        )
+    else:
+        train_agent(
+            steps=1_000_000,
+            batch_size=64,
+            sample_moves=15,
+            eval_each=100,
+            eval_batch_size=10,
+            eval_sample_moves=15,
+            eval_lim=30
+        )

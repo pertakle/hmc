@@ -25,7 +25,7 @@ class Network(torch.nn.Module):
 
         self.res_blocks = torch.nn.ParameterList([res_block() for _ in range(4)])
 
-        self.out = torch.nn.Linear(1000, 27)
+        self.out = torch.nn.Linear(1000, 1)
         self.apply(wrappers.torch_init_with_xavier_and_zeros)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -65,20 +65,38 @@ class Agent:
         self.network.eval()
         with torch.no_grad():
             logits = self.network(x)
-        probs = torch.nn.functional.softmax(logits, -1)
-        values = probs @ self.values
+        values = logits.squeeze()
+        #probs = torch.nn.functional.softmax(logits, -1)
+        probs = torch.nn.functional.sigmoid(values) * 26
+        return probs
+        #values = probs @ self.values
+        #values = torch.argmax(probs, -1)
         return values
 
     @wrappers.typed_torch_function(device, torch.float32, torch.float32)
     def train(self, x, t):
         self.network.train()
         self.opt.zero_grad()
-        logits = self.network(x)
-        y = torch.nn.functional.softmax(logits, -1) @ self.values
-        loss = self.loss(y, t)
+
+        #y = self.network(x).squeeze()
+        logits = self.network(x).squeeze()
+        y = torch.nn.functional.sigmoid(logits) * 26
+        #probabs = torch.nn.functional.softmax(logits, -1)
+        #y = probabs @ self.values
+
+        #mse_loss = self.loss(y, t)
+        mse_loss = torch.nn.functional.mse_loss(y, t)
+        #cross_loss = torch.nn.functional.cross_entropy(logits, t.type(torch.int64))
+
+        #entropy = torch.distributions.Categorical(logits=logits).entropy().mean()
+        #entropy_reg = 0.1 * entropy
+
+        loss = mse_loss #+ cross_loss
         loss.backward()
         with torch.no_grad():
             self.opt.step()
 
-        self.info["mse_loss"] = loss.item()
+        self.info["mse_loss"] = mse_loss.item()
+        #self.info["cross_loss"] = cross_loss.item()
+        #self.info["total_loss"] = loss.item()
 
