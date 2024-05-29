@@ -67,7 +67,8 @@ class Agent:
             logits = self.network(x)
         values = logits.squeeze()
         #probs = torch.nn.functional.softmax(logits, -1)
-        probs = torch.nn.functional.sigmoid(values) * 26
+        #probs = torch.nn.functional.sigmoid(values) * 26
+        probs = values
         return probs
         #values = probs @ self.values
         #values = torch.argmax(probs, -1)
@@ -78,14 +79,13 @@ class Agent:
         self.network.train()
         self.opt.zero_grad()
 
-        #y = self.network(x).squeeze()
-        logits = self.network(x).squeeze()
-        y = torch.nn.functional.sigmoid(logits) * 26
+        y = self.network(x).squeeze()
+        #logits = self.network(x).squeeze()
+        #y = torch.nn.functional.sigmoid(logits) * 26
         #probabs = torch.nn.functional.softmax(logits, -1)
         #y = probabs @ self.values
 
-        #mse_loss = self.loss(y, t)
-        mse_loss = torch.nn.functional.mse_loss(y, t)
+        mse_loss = self.loss(y, t)
         #cross_loss = torch.nn.functional.cross_entropy(logits, t.type(torch.int64))
 
         #entropy = torch.distributions.Categorical(logits=logits).entropy().mean()

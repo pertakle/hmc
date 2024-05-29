@@ -59,3 +59,5 @@ def tahni_tahy_vek(kostka: KostkaVek, tahy: np.ndarray) -> None:
     for tah in tahy:
         tahni_tah_vek(kostka, tah)
 
+def vygeneruj_nahodny_tah_vek(kostek: int) -> np.ndarray:
+    return np.random.randint(1, 6, kostek) * np.random.choice([-1, 1], kostek)

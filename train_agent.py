@@ -64,15 +64,17 @@ def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tupl
     VSECHNY_TAHY = np.hstack([np.arange(1, 7), -np.arange(1,7)]*kostek)
     k = kv.nova_kostka_vek(kostek)
     max_tahu = np.random.randint(0, tahu+1, [kostek])
-    active_indices = np.arange(kostek)
+    indexy = np.arange(kostek)
+    data = k.copy()
 
-    for i in range(tahu): 
-        active_indices = active_indices[max_tahu[active_indices] > i]
-        if len(active_indices) == 0:
-            break
-        rnd_tah = np.random.randint(1, 7, [len(active_indices)]) * np.random.choice([-1, 1], [len(active_indices)])
-        kv.tahni_tah_vek(k[active_indices], rnd_tah)
-        active_indices = active_indices[max_tahu[active_indices] > i]
+    for i in range(np.max(max_tahu)): 
+        ulozit = indexy[max_tahu == i]
+        data[ulozit] = k[ulozit]
+
+        # nahodny tah
+        # TODO: neefektivne tah vsemi
+        kv.tahni_tah_vek(k, kv.vygeneruj_nahodny_tah_vek(kostek)) 
+
     data = k.reshape([kostek, FEATUR])
 
     moznosti = np.repeat(k, 12, axis=0)
@@ -121,7 +123,7 @@ if __name__ == "__main__":
         train_value_iteration(
             steps=1_000_000,
             batch_size=1024,
-            sample_moves=26,
+            sample_moves=10,
             copy_each=100,
             eval_each=100,
             eval_batch_size=10,

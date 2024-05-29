@@ -51,6 +51,9 @@ def tahni_tahy(kostka: Kostka, tahy: Iterable[int]) -> None:
     for tah in tahy:
         tahni_tah(kostka, tah)
 
+def vygeneruj_nahodny_tah() -> int:
+    return np.random.randint(1, 6) * np.random.choice([-1, 1])
+
 def benchmark(tahy: list[int]) -> None:
     kostka = nova_kostka()
     tahni_tahy(kostka, tahy)
