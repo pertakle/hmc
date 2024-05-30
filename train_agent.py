@@ -3,6 +3,8 @@ import numpy as np
 import kostka_vek as kv
 import kostka as ko
 from copy import deepcopy
+import tqdm
+from typing import Any
 
 
 def generate_batch(kostek: int, tahu: int) -> tuple[np.ndarray, np.ndarray]:
@@ -37,6 +39,7 @@ def evaluate_solve(agent: Agent, kostek: int, tahu: int, limit: int) -> int:
                              )
             pred = agent.predict(moznosti)
             kk = moznosti[np.argmin(pred)]
+    agent.info["solved"] = f"{slozeno}/{kostek}"
     return slozeno
 
 
@@ -91,6 +94,9 @@ def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tupl
 def format_float(x: float) -> str:
     return f"{x:.4f}" if x >= 1e-4 else f"{x:.4e}"
 
+def format_info(info: dict[str, Any]) -> str:
+    return " - ".join(map(lambda x: f"{x[0]} {format_float(x[1]) if isinstance(x[1], float) else x[1]}", info.items()))
+
 def train_value_iteration(steps: int,
                           batch_size: int,
                           sample_moves: int,
@@ -100,8 +106,14 @@ def train_value_iteration(steps: int,
                           eval_batch_size: int,
                           eval_sample_moves: int,
                           eval_lim: int) -> Agent:
+    def new_bar(steps: int) -> tqdm.tqdm:
+        return tqdm.tqdm(total=steps, desc="Training", leave=True)
+ 
+
     agent_behave = Agent()
     agent_target = deepcopy(agent_behave)
+    bar = new_bar(min(eval_each, steps))
+
     for step in range(1, steps + 1):
         data, target = generate_val_iter_batch(agent_target, batch_size, sample_moves)
         agent_behave.train(data, target)
@@ -109,9 +121,15 @@ def train_value_iteration(steps: int,
         if (step % copy_each) == 0 and agent_behave.info["mse_loss"] < epsilon:
             agent_target = deepcopy(agent_behave)
 
-        if (step % eval_each) == 0: 
-            slozenych = evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
-            print(f"Evaluation after {step} steps:", " - ".join(map(lambda x: f"{x[0]} {format_float(x[1])}", agent_behave.info.items())), f"- solved {slozenych}/{eval_batch_size}")
+        bar.update()
+        if (step % eval_each) == 0 or step == steps: 
+            evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
+            
+            bar.bar_format = '{desc} [{elapsed}, {rate_fmt}{postfix}]'
+            bar.set_description(f"Evaluation after {step} steps: {format_info(agent_behave.info)}", False)
+            bar.close()
+            if step < steps:
+                bar = new_bar(min(eval_each, steps - step))
 
     return agent_behave
 
@@ -121,14 +139,14 @@ def train_value_iteration(steps: int,
 if __name__ == "__main__":
     if True:
         train_value_iteration(
-            steps=1_000_000,
-            batch_size=8192,
+            steps=1_0,
+            batch_size=1024,
             sample_moves=30,
-            copy_each=1000,
+            copy_each=100,
             epsilon=0.05,
             eval_each=100,
             eval_batch_size=100,
-            eval_sample_moves=13,
+            eval_sample_moves= 13,
             eval_lim=30
         )
     else:
