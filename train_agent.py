@@ -125,8 +125,8 @@ def train_value_iteration(steps: int,
         if (step % eval_each) == 0 or step == steps: 
             evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
             
-            bar.bar_format = '{desc} [{elapsed}, {rate_fmt}{postfix}]'
-            bar.set_description(f"Evaluation after {step} steps: {format_info(agent_behave.info)}", False)
+            bar.bar_format = f'{{desc}}{format_info(agent_behave.info)} [{{elapsed}}, {{rate_fmt}}{{postfix}}]'
+            bar.set_description(f"Evaluation after {step} steps", False)
             bar.close()
             if step < steps:
                 bar = new_bar(min(eval_each, steps - step))
