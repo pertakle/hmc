@@ -60,24 +60,23 @@ def train_agent(steps: int,
 
 
 def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tuple[np.ndarray, np.ndarray]:
-    FEATUR = 54
     VSECHNY_TAHY = np.hstack([np.arange(1, 7), -np.arange(1,7)]*kostek)
     k = kv.nova_kostka_vek(kostek)
     max_tahu = np.random.randint(0, tahu+1, [kostek])
     indexy = np.arange(kostek)
     data = k.copy()
 
-    for i in range(np.max(max_tahu)): 
+    for i in range(np.max(max_tahu) + 1): 
         ulozit = indexy[max_tahu == i]
         data[ulozit] = k[ulozit]
 
         # nahodny tah
         # TODO: neefektivne tah vsemi
-        kv.tahni_tah_vek(k, kv.vygeneruj_nahodny_tah_vek(kostek)) 
+        tahy = kv.vygeneruj_nahodny_tah_vek(kostek)
+        kv.tahni_tah_vek(k, tahy) 
 
-    data = k.reshape([kostek, FEATUR])
 
-    moznosti = np.repeat(k, 12, axis=0)
+    moznosti = np.repeat(data, 12, axis=0)
     kv.tahni_tah_vek(moznosti, VSECHNY_TAHY)
 
     predikce = agent_target.predict(moznosti)
@@ -96,6 +95,7 @@ def train_value_iteration(steps: int,
                           batch_size: int,
                           sample_moves: int,
                           copy_each: int,
+                          epsilon: float,
                           eval_each: int,
                           eval_batch_size: int,
                           eval_sample_moves: int,
@@ -106,7 +106,7 @@ def train_value_iteration(steps: int,
         data, target = generate_val_iter_batch(agent_target, batch_size, sample_moves)
         agent_behave.train(data, target)
 
-        if (step % copy_each) == 0:
+        if (step % copy_each) == 0 and agent_behave.info["mse_loss"] < epsilon:
             agent_target = deepcopy(agent_behave)
 
         if (step % eval_each) == 0: 
@@ -122,13 +122,14 @@ if __name__ == "__main__":
     if True:
         train_value_iteration(
             steps=1_000_000,
-            batch_size=1024,
-            sample_moves=10,
-            copy_each=100,
+            batch_size=8192,
+            sample_moves=30,
+            copy_each=1000,
+            epsilon=0.05,
             eval_each=100,
-            eval_batch_size=10,
-            eval_sample_moves=5,
-            eval_lim=10
+            eval_batch_size=100,
+            eval_sample_moves=13,
+            eval_lim=30
         )
     else:
         train_agent(
