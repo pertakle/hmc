@@ -54,17 +54,3 @@ def tahni_tahy(kostka: Kostka, tahy: Iterable[int]) -> None:
 def vygeneruj_nahodny_tah() -> int:
     return np.random.randint(1, 6) * np.random.choice([-1, 1])
 
-def benchmark(tahy: list[int]) -> None:
-    kostka = nova_kostka()
-    tahni_tahy(kostka, tahy)
-
-if __name__ == "__main__":
-    import perfplot 
-    
-    perfplot.show(
-        setup=lambda n: list(range(1, 7))*n,
-        kernels=[
-            benchmark,
-        ],
-        n_range=[10**i for i in range(5)]
-    )

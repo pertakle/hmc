@@ -1,6 +1,7 @@
 import utils as ut
 import kostka as ko
 import numpy as np
+from typing import Any
 
 
 KostkaVek = np.ndarray
@@ -8,20 +9,13 @@ KostkaVek = np.ndarray
 def nova_kostka_vek(n: int) -> KostkaVek:
     return np.stack([ko.SLOZENA_KOSTKA]*n)
 
-def je_slozena(kostka: KostkaVek) -> bool:
+def je_slozena(kostka: KostkaVek) -> np.ndarray:
     return np.all(kostka == ko.SLOZENA_KOSTKA, axis=(1,2,3))
 
 
 def print_kostku_vek(kostka: KostkaVek) -> None:
     for k in kostka:
-        for l in k[0]:
-            print(" "*7, l, sep="")
-        for i in range(3):
-            for s in k[1:5]:
-                print(s[i], end="")
-            print()
-        for l in k[5]:
-            print(" "*7, l, sep="")
+        ko.print_kostku(k)
         print()
 
 def tahni_tah_vek(kostka: KostkaVek, tah: np.ndarray) -> None:
@@ -59,5 +53,19 @@ def tahni_tahy_vek(kostka: KostkaVek, tahy: np.ndarray) -> None:
     for tah in tahy:
         tahni_tah_vek(kostka, tah)
 
-def vygeneruj_nahodny_tah_vek(kostek: int) -> np.ndarray:
-    return np.random.randint(1, 6, kostek) * np.random.choice([-1, 1], kostek)
+
+def vygeneruj_nahodny_tah_vek(shape: Any) -> np.ndarray:
+    return np.random.randint(1, 6, shape) * np.random.choice([-1, 1], shape)
+
+VSECHNY_TAHY = np.array([1, 2, 3, 4, 5, 6, -1, -2, -3, -4, -5, -6], dtype=int)
+def tahni_vsechny_tahy(kostka: ko.Kostka) -> KostkaVek:
+    kostky = np.stack([kostka]*12)
+    tahni_tah_vek(kostky, VSECHNY_TAHY)
+    return kostky
+    
+def tahni_vsechny_tahy_vek(kostka: KostkaVek) -> KostkaVek:
+    kostky = np.repeat(kostka, 12, axis=0)
+    tahy = np.hstack([VSECHNY_TAHY]*len(kostka))
+    tahni_tah_vek(kostky, tahy)
+    return kostky
+

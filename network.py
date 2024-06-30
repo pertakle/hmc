@@ -1,5 +1,6 @@
 import torch
 import wrappers
+import numpy as np
 
 def res_block():
     return torch.nn.Sequential(
@@ -25,7 +26,7 @@ class Network(torch.nn.Module):
 
         self.res_blocks = torch.nn.ParameterList([res_block() for _ in range(4)])
 
-        self.out = torch.nn.Linear(1000, 1)
+        self.out = torch.nn.Linear(1000, 12)
         self.apply(wrappers.torch_init_with_xavier_and_zeros)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -48,55 +49,54 @@ class Network(torch.nn.Module):
         out = self.out(hidden)
         return out
 
-class Agent:
 
+class Agent:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(self):
         self.network = Network().to(self.device)
         self.opt = torch.optim.Adam(self.network.parameters())
-        self.loss = torch.nn.MSELoss()
-        self.values = torch.arange(27, dtype=torch.float32, device=self.device) # 0...26 = biží číslo
+        self.loss = torch.nn.CrossEntropyLoss()
+        #self.values = torch.arange(27, dtype=torch.float32, device=self.device) # 0...26 = biží číslo
         self.info = {}
         
+    def tahy_na_indexy(self, tahy: torch.Tensor) -> torch.Tensor:
+        minus_tahy = (tahy<0).type(torch.int64)
+        indexy = tahy.type(torch.int64) - minus_tahy * 6
+        indexy -= 2*indexy*minus_tahy
+        indexy -= 1
+        return indexy
+
+    def indexy_na_tahy(self, indexy: np.ndarray) -> np.ndarray:
+        minus_tahy = (indexy > 5).astype(np.int64)
+        tahy = indexy + 1
+        tahy -= 2*indexy*minus_tahy
+        tahy += 4*minus_tahy
+        return tahy
 
     @wrappers.typed_torch_function(device, torch.float32)
     def predict(self, x):
         self.network.eval()
         with torch.no_grad():
             logits = self.network(x)
-        values = logits.squeeze()
-        #probs = torch.nn.functional.softmax(logits, -1)
-        #probs = torch.nn.functional.sigmoid(values) * 26
-        probs = values
+        probs = torch.nn.functional.softmax(logits, -1)
         return probs
-        #values = probs @ self.values
-        #values = torch.argmax(probs, -1)
-        return values
 
     @wrappers.typed_torch_function(device, torch.float32, torch.float32)
-    def train(self, x, t):
+    def train(self, x, tahy):
+        t = self.tahy_na_indexy(tahy)
         self.network.train()
         self.opt.zero_grad()
 
         y = self.network(x).squeeze()
-        #logits = self.network(x).squeeze()
-        #y = torch.nn.functional.sigmoid(logits) * 26
-        #probabs = torch.nn.functional.softmax(logits, -1)
-        #y = probabs @ self.values
-
-        mse_loss = self.loss(y, t)
-        #cross_loss = torch.nn.functional.cross_entropy(logits, t.type(torch.int64))
+        loss = self.loss(y, t)
 
         #entropy = torch.distributions.Categorical(logits=logits).entropy().mean()
         #entropy_reg = 0.1 * entropy
 
-        loss = mse_loss #+ cross_loss
         loss.backward()
         with torch.no_grad():
             self.opt.step()
 
-        self.info["mse_loss"] = mse_loss.item()
-        #self.info["cross_loss"] = cross_loss.item()
-        #self.info["total_loss"] = loss.item()
+        self.info["loss"] = loss.item()
 

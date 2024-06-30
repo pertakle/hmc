@@ -8,7 +8,7 @@ from typing import Any
 
 
 def generate_batch(kostek: int, tahu: int) -> tuple[np.ndarray, np.ndarray]:
-    FEATUR = 54
+    FEATUR = 54 # np.prod(k[0].shape)
     k = kv.nova_kostka_vek(kostek)
     data = np.empty([tahu*kostek, FEATUR], dtype=np.uint8)
     target = np.zeros([tahu*kostek], dtype=np.uint8)
@@ -62,6 +62,9 @@ def train_agent(steps: int,
 
 
 
+from line_profiler import profile
+
+@profile
 def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tuple[np.ndarray, np.ndarray]:
     VSECHNY_TAHY = np.hstack([np.arange(1, 7), -np.arange(1,7)]*kostek)
     k = kv.nova_kostka_vek(kostek)
@@ -82,11 +85,12 @@ def generate_val_iter_batch(agent_target: Agent, kostek: int, tahu: int) -> tupl
     moznosti = np.repeat(data, 12, axis=0)
     kv.tahni_tah_vek(moznosti, VSECHNY_TAHY)
 
-    predikce = agent_target.predict(moznosti)
-    predikce= predikce * np.logical_not(kv.je_slozena(moznosti))
-    predikce = predikce.reshape([kostek, 12])
-    target = np.min(predikce, axis=1) + 1
-    target *= max_tahu > 0 # pro nezamichane nas min synu nezajima
+    target = k[:,0,0,0]
+    #predikce = agent_target.predict(moznosti)
+    #predikce= predikce * np.logical_not(kv.je_slozena(moznosti))
+    #predikce = predikce.reshape([kostek, 12])
+    #target = np.min(predikce, axis=1) + 1
+    #target *= max_tahu > 0 # pro nezamichane nas min synu nezajima
 
     return data, target
     
@@ -97,6 +101,7 @@ def format_float(x: float) -> str:
 def format_info(info: dict[str, Any]) -> str:
     return " - ".join(map(lambda x: f"{x[0]} {format_float(x[1]) if isinstance(x[1], float) else x[1]}", info.items()))
 
+@profile
 def train_value_iteration(steps: int,
                           batch_size: int,
                           sample_moves: int,
@@ -116,16 +121,17 @@ def train_value_iteration(steps: int,
 
     for step in range(1, steps + 1):
         data, target = generate_val_iter_batch(agent_target, batch_size, sample_moves)
-        agent_behave.train(data, target)
+        data, target = target, data
+        #agent_behave.train(data, target)
 
-        if (step % copy_each) == 0 and agent_behave.info["mse_loss"] < epsilon:
+        if False:#(step % copy_each) == 0 and agent_behave.info.get("mse_loss", 0) < epsilon:
             agent_target = deepcopy(agent_behave)
 
         bar.update()
-        if (step % eval_each) == 0 or step == steps: 
+        if False:#(step % eval_each) == 0 or step == steps: 
             evaluate_solve(agent_behave, eval_batch_size, eval_sample_moves, eval_lim)
             
-            bar.bar_format = f'{{desc}}{format_info(agent_behave.info)} [{{elapsed}},{{rate_fmt}}{{postfix}}]'
+            bar.bar_format = f'{{desc}} {format_info(agent_behave.info)} [{{elapsed}}, {{rate_fmt}}{{postfix}}]'
             bar.set_description(f"Evaluation after {step} steps", False)
             bar.close()
             if step < steps:
@@ -139,15 +145,15 @@ def train_value_iteration(steps: int,
 if __name__ == "__main__":
     if True:
         train_value_iteration(
-            steps=1_0,
-            batch_size=1024,
-            sample_moves=30,
-            copy_each=100,
-            epsilon=0.05,
-            eval_each=100,
+            steps=100,
+            batch_size=10_000,
+            sample_moves=15,
+            copy_each=1000,
+            epsilon=0.25,
+            eval_each=1000,
             eval_batch_size=100,
-            eval_sample_moves= 13,
-            eval_lim=30
+            eval_sample_moves= 7,
+            eval_lim=50
         )
     else:
         train_agent(

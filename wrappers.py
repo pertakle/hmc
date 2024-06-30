@@ -1,3 +1,4 @@
+import numpy as np
 
 def typed_torch_function(device, *types, via_np=False):
     """Typed Torch function decorator.
