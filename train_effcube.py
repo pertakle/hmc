@@ -3,18 +3,36 @@ from network import Agent
 import numpy as np
 import kostka_vek as kv
 import kostka as ko
-from copy import deepcopy
 import tqdm
 from typing import Any
 
 
 def solve_beam(kostka: ko.Kostka, agent: Agent, kandidatu: int, limit: int) -> int:
-    kandidati = kostka.copy()
-    pravdepodobnosti = np.ones(kandidatu)
+    kandidati = kostka.reshape([1, *kostka.shape])
+    pr_kandidatu = np.ones([1, 1])
 
     for step in range(limit):
-        probs = agent.predict(kandidati)
-        raise NotImplementedError
+        if np.any(kv.je_slozena(kandidati)):
+            break
+
+        predikce = agent.predict(kandidati)
+        pr_nasledniku = pr_kandidatu * predikce # type: ignore
+        pr_nasledniku_vektor = pr_nasledniku.reshape(-1)
+        nej_indexy = np.argsort(pr_nasledniku_vektor)[-kandidatu:] # argsort setridi vzestupne
+
+        indexy_otcu = nej_indexy // 12
+        indexy_tahu = nej_indexy % 12
+
+        kandidati = kandidati[indexy_otcu]
+        tahy = agent.indexy_na_tahy(indexy_tahu)
+        kv.tahni_tah_vek(kandidati, tahy)
+        pr_kandidatu = pr_nasledniku[indexy_otcu, indexy_tahu].reshape(-1, 1)
+
+        assert len(pr_kandidatu) == len(kandidati), f"Pocet kandidatu ({len(kandidati)}) a pravdepodobnosti ({len(pr_kandidatu)}) musi byt stejny."
+        assert kandidati.shape[1:] == kostka.shape, f"Nespravny tvar kandidatu {kandidati.shape}."
+        assert len(kandidati) <= kandidatu, f"Prilis mnoho kandidatu {len(kandidati)}, limit je {kandidatu}."
+
+    return 1 if np.any(kv.je_slozena(kandidati)) else 0
 
 def solve_greedy(kostka: kv.KostkaVek, agent: Agent, limit: int) -> int:
     slozene = np.full(len(kostka), False)
@@ -24,7 +42,7 @@ def solve_greedy(kostka: kv.KostkaVek, agent: Agent, limit: int) -> int:
             break
 
         predikce = agent.predict(kostka)
-        tahy = agent.indexy_na_tahy(np.argmax(predikce, axis=-1))
+        tahy = agent.indexy_na_tahy(np.argmax(predikce, axis=-1)) # type: ignore
         kv.tahni_tah_vek(kostka, tahy)
 
     return np.count_nonzero(slozene)
@@ -32,22 +50,24 @@ def solve_greedy(kostka: kv.KostkaVek, agent: Agent, limit: int) -> int:
 def evaluate(agent: Agent, n: int, tahu: int, limit: int) -> None:
     kostka = kv.nova_kostka_vek(n)
     kv.tahni_tahy_vek(kostka, kv.vygeneruj_nahodny_tah_vek([tahu, n]))
-    slozeno = solve_greedy(kostka, agent, limit)
+    #slozeno = solve_greedy(kostka, agent, limit)
+    slozeno = 0
+    for k in kostka:
+        slozeno += solve_beam(k, agent, 10, limit)
     agent.info["solved"] = f"{100*slozeno/n:.2f} %"
 
        
 def generate_batch(kostek: int, tahu: int) -> tuple[np.ndarray, np.ndarray]:
-    FEATUR = 54 # np.prod(k[0].shape)
     k = kv.nova_kostka_vek(kostek)
 
-    data = np.empty([tahu*kostek, FEATUR], dtype=np.uint8)
+    data = np.empty([tahu*kostek, *k[0].shape], dtype=np.uint8)
     target = np.zeros([tahu*kostek], dtype=np.int64)
 
     tahy = kv.vygeneruj_nahodny_tah_vek([tahu, kostek])
 
     for t, tah in enumerate(tahy):
         kv.tahni_tah_vek(k, tah)
-        data[t*kostek:(t+1)*kostek] = k.reshape(-1, FEATUR)
+        data[t*kostek:(t+1)*kostek] = k
         target[t*kostek:(t+1)*kostek] = -tah #inverzni tah
 
     return data, target
@@ -96,7 +116,7 @@ if __name__ == "__main__":
         batch_size=128,
         sample_moves=26,
         eval_each=100,
-        eval_batch_size=10000,
-        eval_sample_moves=26,
-        eval_lim=50
+        eval_batch_size=100,
+        eval_sample_moves=16,
+        eval_lim=16
     )
