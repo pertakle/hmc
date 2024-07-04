@@ -9,9 +9,11 @@ KostkaVek = np.ndarray
 def nova_kostka_vek(n: int) -> KostkaVek:
     return np.stack([ko.SLOZENA_KOSTKA]*n)
 
-def je_slozena(kostka: KostkaVek) -> np.ndarray:
-    return np.all(kostka == ko.SLOZENA_KOSTKA, axis=(1,2,3))
+def je_stejna(kostka1: KostkaVek, kostka2: KostkaVek) -> np.ndarray:
+    return np.all(kostka1 == kostka2, axis=(1,2,3))
 
+def je_slozena(kostka: KostkaVek) -> np.ndarray:
+    return je_stejna(kostka, ko.SLOZENA_KOSTKA)
 
 def print_kostku_vek(kostka: KostkaVek) -> None:
     for k in kostka:

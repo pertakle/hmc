@@ -23,8 +23,11 @@ def print_kostku(kostka: Kostka) -> None:
     for l in kostka[5]:
         print(" "*7, l, sep="")
 
+def je_stejna(kostka1: Kostka, kostka2: Kostka) -> bool:
+    return np.array_equal(kostka1, kostka2)
+
 def je_slozena(kostka: Kostka) -> bool:
-    return np.array_equal(kostka, SLOZENA_KOSTKA)
+    return je_stejna(kostka, SLOZENA_KOSTKA)
 
 
 def tahni_tah(kostka: Kostka, tah: int) -> None:
@@ -51,6 +54,10 @@ def tahni_tahy(kostka: Kostka, tahy: Iterable[int]) -> None:
     for tah in tahy:
         tahni_tah(kostka, tah)
 
-def vygeneruj_nahodny_tah() -> int:
-    return np.random.randint(1, 6) * np.random.choice([-1, 1])
+def vygeneruj_nahodny_tah(shape=None) -> int|np.ndarray:
+    if shape is None:
+        return np.random.randint(1, 6) * np.random.choice([-1, 1])
+    return np.random.randint(1, 6, shape) * np.random.choice([-1, 1], shape)
 
+def zamichej(kostka: Kostka, pocet_tahu: int) -> None:
+    tahni_tahy(kostka, vygeneruj_nahodny_tah(pocet_tahu)) # type: ignore
