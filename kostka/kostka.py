@@ -1,5 +1,5 @@
 import numpy as np
-import utils as ut
+from utils import utils as ut
 from typing import Iterable
 
 Kostka = np.ndarray

@@ -1,13 +1,13 @@
 
-from network import Agent
+from nn.eff_cube_agent import EffCubeAgent
 import numpy as np
-import kostka_vek as kv
-import kostka as ko
+import kostka.kostka_vek as kv
+import kostka.kostka as ko
 import tqdm
 from typing import Any
 
 
-def solve_beam(kostka: ko.Kostka, agent: Agent, kandidatu: int, limit: int) -> int:
+def solve_beam(kostka: ko.Kostka, agent: EffCubeAgent, kandidatu: int, limit: int) -> int:
     kandidati = kostka.reshape([1, *kostka.shape])
     pr_kandidatu = np.ones([1, 1])
 
@@ -34,7 +34,7 @@ def solve_beam(kostka: ko.Kostka, agent: Agent, kandidatu: int, limit: int) -> i
 
     return 1 if np.any(kv.je_slozena(kandidati)) else 0
 
-def solve_greedy(kostka: kv.KostkaVek, agent: Agent, limit: int) -> int:
+def solve_greedy(kostka: kv.KostkaVek, agent: EffCubeAgent, limit: int) -> int:
     slozene = np.full(len(kostka), False)
     for _ in range(limit):
         slozene = np.logical_or(slozene, kv.je_slozena(kostka))
@@ -47,7 +47,7 @@ def solve_greedy(kostka: kv.KostkaVek, agent: Agent, limit: int) -> int:
 
     return np.count_nonzero(slozene)
         
-def evaluate(agent: Agent, n: int, tahu: int, limit: int) -> None:
+def evaluate(agent: EffCubeAgent, n: int, tahu: int, limit: int) -> None:
     kostka = kv.nova_kostka_vek(n)
     kv.tahni_tahy_vek(kostka, kv.vygeneruj_nahodny_tah_vek([tahu, n]))
     #slozeno = solve_greedy(kostka, agent, limit)
@@ -85,12 +85,12 @@ def train_eff_cube(steps: int,
                    eval_each: int,
                    eval_batch_size: int,
                    eval_sample_moves: int,
-                   eval_lim: int) -> Agent:
+                   eval_lim: int) -> EffCubeAgent:
     def new_bar(steps: int) -> tqdm.tqdm:
         return tqdm.tqdm(total=steps, desc="Training", leave=True)
  
 
-    agent = Agent()
+    agent = EffCubeAgent()
     bar = new_bar(min(eval_each, steps))
 
     for step in range(1, steps + 1):

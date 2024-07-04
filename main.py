@@ -1,6 +1,6 @@
 import numpy as np
-import kostka as ko
-import kostka_vek as kv
+from kostka import kostka as ko
+from kostka import kostka_vek as kv
 
 
 # def maint():

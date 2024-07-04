@@ -1,7 +1,9 @@
-from network import Agent
+raise ModuleNotFoundError
+
+from nn.network import Agent
 import numpy as np
-import kostka_vek as kv
-import kostka as ko
+import kostka.kostka_vek as kv
+import kostka.kostka as ko
 from copy import deepcopy
 import tqdm
 from typing import Any

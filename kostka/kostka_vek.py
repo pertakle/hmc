@@ -1,5 +1,5 @@
-import utils as ut
-import kostka as ko
+from utils import utils as ut
+from kostka import kostka as ko
 import numpy as np
 from typing import Any
 
