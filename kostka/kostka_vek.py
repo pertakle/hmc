@@ -21,6 +21,9 @@ def print_kostku_vek(kostka: KostkaVek) -> None:
         print()
 
 def tahni_tah_vek(kostka: KostkaVek, tah: np.ndarray) -> None:
+    assert np.all(1 <= np.abs(tah))
+    assert np.all(np.abs(tah) <= 12)
+
     abs_tah = np.abs(tah) - 1
     smer_01 = (1-np.sign(tah))//2
     # smer_11 = -np.sign(tah)
@@ -28,7 +31,7 @@ def tahni_tah_vek(kostka: KostkaVek, tah: np.ndarray) -> None:
     smer_proti = np.logical_not(smer_po)
 
     # TODO: odstranit potrebu transpozice
-    okoli = ut.OKOLI[abs_tah].transpose([1,0,2]) 
+    okoli = ut.OKOLI[abs_tah].transpose([1,0,2])
     okoli_posun = ut.OKOLI_POSUN[smer_01, abs_tah].transpose([1,0,2])
 
 
@@ -37,7 +40,7 @@ def tahni_tah_vek(kostka: KostkaVek, tah: np.ndarray) -> None:
 
     kostka[smer_po_idx, abs_tah[smer_po_idx]] = np.rot90(kostka[smer_po_idx, abs_tah[smer_po_idx]], 1, (1,2))
     kostka[smer_proti_idx, abs_tah[smer_proti_idx]] = np.rot90(kostka[smer_proti_idx, abs_tah[smer_proti_idx]], -1, (1,2))
-    
+
     ar = np.arange(len(kostka)).reshape([-1,1])
     #kostka[ar, *okoli] = kostka[ar, *okoli_posun]
     kostka[ar, okoli[0], okoli[1], okoli[2]] = kostka[ar, okoli_posun[0], okoli_posun[1], okoli_posun[2]] # kvůli pythonu 3.10
@@ -64,10 +67,9 @@ def tahni_vsechny_tahy(kostka: ko.Kostka) -> KostkaVek:
     kostky = np.stack([kostka]*12)
     tahni_tah_vek(kostky, VSECHNY_TAHY)
     return kostky
-    
+
 def tahni_vsechny_tahy_vek(kostka: KostkaVek) -> KostkaVek:
     kostky = np.repeat(kostka, 12, axis=0)
     tahy = np.hstack([VSECHNY_TAHY]*len(kostka))
     tahni_tah_vek(kostky, tahy)
     return kostky
-
