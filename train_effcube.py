@@ -50,10 +50,10 @@ def solve_greedy(kostka: kv.KostkaVek, agent: EffCubeAgent, limit: int) -> int:
 def evaluate(agent: EffCubeAgent, n: int, tahu: int, limit: int) -> None:
     kostka = kv.nova_kostka_vek(n)
     kv.tahni_tahy_vek(kostka, kv.vygeneruj_nahodny_tah_vek([tahu, n]))
-    #slozeno = solve_greedy(kostka, agent, limit)
-    slozeno = 0
-    for k in kostka:
-        slozeno += solve_beam(k, agent, 10, limit)
+    slozeno = solve_greedy(kostka, agent, limit)
+    #slozeno = 0
+    #for k in kostka:
+    #    slozeno += solve_beam(k, agent, 10, limit)
     agent.info["solved"] = f"{100*slozeno/n:.2f} %"
 
        
@@ -113,10 +113,10 @@ def train_eff_cube(steps: int,
 if __name__ == "__main__":
     train_eff_cube(
         steps=100_000,
-        batch_size=128,
-        sample_moves=26,
+        batch_size=64,
+        sample_moves=15,
         eval_each=100,
         eval_batch_size=100,
-        eval_sample_moves=16,
-        eval_lim=16
+        eval_sample_moves=5,
+        eval_lim=30
     )

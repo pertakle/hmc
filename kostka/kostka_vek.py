@@ -21,6 +21,14 @@ def print_kostku_vek(kostka: KostkaVek) -> None:
         print()
 
 def tahni_tah_vek(kostka: KostkaVek, tah: np.ndarray) -> None:
+    """
+    Provede jeden patřičný tah na na každé kostce.
+
+    ```python
+    kostka.shape = (K, ...)
+    tah.shape = (K,)
+    ```
+    """
     assert np.all(1 <= np.abs(tah))
     assert np.all(np.abs(tah) <= 12)
 
@@ -61,6 +69,9 @@ def tahni_tahy_vek(kostka: KostkaVek, tahy: np.ndarray) -> None:
 
 def vygeneruj_nahodny_tah_vek(shape: Any) -> np.ndarray:
     return np.random.randint(1, 6, shape) * np.random.choice([-1, 1], shape)
+
+def zamichej_nahodnymi_tahy_vek(kostka: KostkaVek, tahu: int) -> None:
+    tahni_tahy_vek(kostka, vygeneruj_nahodny_tah_vek([tahu, kostka.shape[0]]))
 
 VSECHNY_TAHY = np.array([1, 2, 3, 4, 5, 6, -1, -2, -3, -4, -5, -6], dtype=int)
 def tahni_vsechny_tahy(kostka: ko.Kostka) -> KostkaVek:
