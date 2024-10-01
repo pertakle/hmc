@@ -9,15 +9,15 @@ class HERCubeAgent:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(self):
-        self.policy_network = Network(2*6*3*3*6, 12).to(self.device)
-        self.policy_network.apply(wrappers.torch_init_with_xavier_and_zeros)
-        self.policy_opt = torch.optim.Adam(self.policy_network.parameters(), lr=0.001)
-        self.policy_loss = torch.nn.CrossEntropyLoss(reduction="none")
+        self.actor = Network(2*6*3*3*6, 12).to(self.device)
+        self.actor.apply(wrappers.torch_init_with_xavier_and_zeros)
+        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=0.001)
+        self.actor_loss = torch.nn.CrossEntropyLoss(reduction="none")
 
-        self.val_network = Network(2*6*3*3*6, 1).to(self.device)
-        self.val_network.apply(wrappers.torch_init_with_xavier_and_zeros)
-        self.val_opt = torch.optim.Adam(self.val_network.parameters(), lr=0.001)
-        self.val_loss = torch.nn.MSELoss()
+        self.critic = Network(2*6*3*3*6, 1).to(self.device)
+        self.critic.apply(wrappers.torch_init_with_xavier_and_zeros)
+        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=0.001)
+        self.critic_loss = torch.nn.MSELoss()
 
         self.info = {}
 
@@ -48,30 +48,43 @@ class HERCubeAgent:
 
     @wrappers.typed_torch_function(device, torch.float32)
     def predict_action_probs(self, x):
-        self.policy_network.eval()
+        self.actor.eval()
         with torch.no_grad():
-            logits = self.policy_network(x)
-            probs = torch.nn.functional.softmax(logits, -1)
-            return probs
+            logits = self.actor(x)
+        return torch.nn.functional.softmax(logits, -1)
+
+    @wrappers.typed_torch_function(device, torch.float32)
+    def predict_values(self, x):
+        self.critic.eval()
+        with torch.no_grad():
+            predictions = self.critic(x)
+        return predictions
 
     @wrappers.typed_torch_function(device, torch.float32, torch.int64, torch.float32)
     def train(self, states, actions, returns):
-        self.policy_network.train()
-        self.policy_opt.zero_grad()
+        self.actor.train()
+        self.actor_opt.zero_grad()
 
-        predicted_baseline = self.val_network(states).squeeze()
-        logits = self.policy_network(states)
-        loss = (self.policy_loss(logits, actions) * (returns - predicted_baseline)).mean()
+        logits = self.actor(states)
+        v = self.critic(states).squeeze()
 
-        loss.backward()
-        self.policy_opt.step()
+        beta = 0.05
+        actor_loss = torch.mean((returns - v.detach()) * self.actor_loss(logits, actions) - \
+                                beta * torch.distributions.Categorical(torch.softmax(logits, 1)).entropy())
 
-        self.val_network.train()
-        self.val_opt.zero_grad()
-        predicted_baseline = self.val_network(states).squeeze()
-        val_loss = self.val_loss(predicted_baseline, returns)
-        val_loss.backward()
-        self.val_opt.step()
 
-        self.info["loss"] = loss.item()
+        actor_loss.backward()
+        with torch.no_grad():
+            self.actor_opt.step()
+
+        self.critic.train()
+        self.critic_opt.zero_grad()
+        critic_loss = self.critic_loss(v, returns)
+        critic_loss.backward()
+        with torch.no_grad():
+            self.critic_opt.step()
+
+        self.info["actor_loss"] = actor_loss.item()
+        self.info["critic_loss"] = critic_loss.item()
+
 

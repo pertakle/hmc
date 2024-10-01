@@ -1,13 +1,18 @@
 import numpy as np
-from typing import Any, Tuple
+from typing import Any, Tuple, List
 from nn.her_cube_agent import HERCubeAgent
 import kostka.kostka_vek as kv
 import kostka.kostka as ko
 import tqdm
 
-def generate_batch(agent: HERCubeAgent, episodes: int, sample_moves: int, move_limit: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def generate_batch(
+        agent: HERCubeAgent, 
+        episodes: int, 
+        sample_moves: int, 
+        move_limit: int
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
-    def generate_episodes_vec2(
+    def generate_episodes_vec(
         agent: HERCubeAgent,
         sample_moves: int,
         move_limit: int,
@@ -18,9 +23,11 @@ def generate_batch(agent: HERCubeAgent, episodes: int, sample_moves: int, move_l
         Goals are randomly scrambled cubes with `sample_moves` uniformly random moves.
 
         Returns:
-            - States: ndarray, dtype=float, shape=[`move_limit + 1`, `number_of_episodes`, 2 * cube features]
-            - Actions: ndarray, dtype=float, shape=[`move_limit`, `number_of_episodes`]
-            - Episode lengths: ndarray, dtype=int, shape=[`number_of_episodes`]
+            - States: ndarray, dtype=float, shape=[`move_limit + 1`, `episodes`, 2 * cube features]
+            - Actions: ndarray, dtype=float, shape=[`move_limit`, `episodes`]
+            - Returns: ndarray, dtype=float, shape=[`episodes`]
+                reward is `-1` for each action, episode terminates when reaching goal
+            - Episode lengths: ndarray, dtype=int, shape=[`episodes`]
         """
         
         STATE_GOAL_FEATURES = 2 * 6 * 3 * 3 # two flattened cubes
@@ -32,7 +39,8 @@ def generate_batch(agent: HERCubeAgent, episodes: int, sample_moves: int, move_l
 
         ep_state_goals = np.zeros([episodes, move_limit + 1, STATE_GOAL_FEATURES])
         ep_actions = np.zeros([episodes, move_limit])
-        ep_lengths = np.zeros(episodes)
+        ep_returns = np.zeros([episodes, move_limit])
+        ep_lengths = np.zeros(episodes, dtype=int)
 
         for step in range(move_limit + 1):
             solved = kv.je_stejna(states, goals)
@@ -58,149 +66,125 @@ def generate_batch(agent: HERCubeAgent, episodes: int, sample_moves: int, move_l
             moves = agent.indexy_na_tahy(actions)
             kv.tahni_tah_vek(states, moves)
 
-        return ep_state_goals, ep_actions, ep_lengths
+            if step < move_limit:
+                # TODO: efektivneji next_stategoal
+                next_stategoals = agent.merge_states_and_goals(states, goals)
+                estimates = agent.predict_values(next_stategoals).squeeze()
+                GAMMA = 1
+                ep_returns[:, step] = -1 + GAMMA * estimates * (1 - kv.je_stejna(states, goals))
+
+        return ep_state_goals, ep_actions, ep_returns, ep_lengths
 
     def her_state_goals_last_state(
-            state_goals: np.ndarray, 
+            agent: HERCubeAgent,
+            episodes: np.ndarray, 
+            actions: np.ndarray,
+            returns: np.ndarray,
             ep_lengths: np.ndarray
-        ) -> np.ndarray:
+        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Makes new transitions with goals reached at the end of episodes.
-        NOTE: Keeps state_goals.shape with the same episodes paddings.
+        NOTE: Keeps episodes.shape with the same episodes paddings.
+
+        Params:
+            - agent
+            - episodes: 
+                shape=[num episodes, padded ep lengths + 1, 2 * CUBE FEATURES],
+                episodes contain the final state as the last state
+                `state_goals.shape[1] > ep_lengths `
+            - actions:
+                shape=[num episodes, padded ep lengths]
+            - returns:
+                shape=[num episodes, padded ep lengths]
+            - ep_lengths:
+                vector of episodes lengths
+                shape=[num episodes]
 
         Returns:
-            - state_goals with replaced goals
+            - HER episodes with replaced goals
+            - actions: just a copy
+            - HER returns
+            - ep lengths: jus a copy
         """
         
         CUBE_FEATURES = 6*3*3
 
-        her_goals = state_goals[:, ep_lengths, CUBE_FEATURES:]
-        her_state_goals = state_goals.copy()
-        her_state_goals[:, :, CUBE_FEATURES:] = her_goals
+        her_goals = np.array([episodes[ep, length, :CUBE_FEATURES] for ep, length in enumerate(ep_lengths)])
+        her_goals = her_goals[:, np.newaxis]
+        her_episodes = episodes.copy()
+        her_episodes[:, :, CUBE_FEATURES:] = her_goals
 
-        return her_state_goals
+        her_actions = actions.copy()
+        her_ep_lengths = ep_lengths.copy()
 
-    def prepare_padded_episodes(
+        # Compute returns
+        estimates = agent.predict_values(her_episodes.reshape(-1, 2*CUBE_FEATURES)).reshape(actions.shape[0], actions.shape[1]+1)
+        her_returns = np.zeros(her_actions.shape)
+        GAMMA = 1
+        for ep in range(len(ep_lengths)):
+            for step in range(her_ep_lengths[ep]):
+                state = her_episodes[ep, step, :CUBE_FEATURES]
+                goal = her_episodes[ep, step, CUBE_FEATURES:]
+                ep_end =  ko.je_stejna(state, goal)
+                her_returns[ep, step] = -1 + GAMMA * estimates[ep, step + 1] * (1 - ep_end)
+                if ep_end:
+                    her_ep_lengths[ep] = step
+                    break
+
+        return her_episodes, her_actions, her_returns, her_ep_lengths
+
+    def unroll_padded_episodes(
             episodes: np.ndarray, 
             actions: np.ndarray, 
+            returns: np.ndarray,
             ep_lengths: np.ndarray
         ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Returns:
-            - state_goals
+        Unrolls all episodes and actions into batch of data.
+
+        Params:
+            - episodes:
             - actions
             - returns
+            - ep_lengths
+
+        Returns:
+            - stategoals: batch of stategoals
+            - actions: 1d vector of actions
+            - returns: 1d vector of returns
         """
         CUBE_FEATURES = 6 * 3 * 3
         num_transitions = ep_lengths.sum()
-        state_goals = np.zeros([num_transitions, CUBE_FEATURES * 2], dtype=int)
-        actions = np.zeros(num_transitions, dtype=int)
-        returns = np.zeros(num_transitions)
+        unrolled_stategoals = np.zeros([num_transitions, CUBE_FEATURES * 2], dtype=int)
+        unrolled_actions = np.zeros(num_transitions, dtype=int)
+        unrolled_returns = np.zeros(num_transitions)
         
 
         # TODO: vektorizace
         transition = 0
         for ep in range(len(ep_lengths)):
             for step in range(ep_lengths[ep]):
-                state_goals[transition] = episodes[ep, step]
-                actions[transition] = actions[ep, step]
-                returns[transition] = -ep_lengths[ep] + step
+                unrolled_stategoals[transition] = episodes[ep, step]
+                unrolled_actions[transition] = actions[ep, step]
+                unrolled_returns[transition] = returns[ep, step]
 
                 transition += 1
-        return state_goals, actions, returns
+        return unrolled_stategoals, unrolled_actions, unrolled_returns
 
-    raise NotImplementedError("Implement `generate_batch` using new functions above.")
+    def merge_data(data_list: List[Tuple[np.ndarray, np.ndarray, np.ndarray]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        stategoals = np.vstack([x[0] for x in data_list])
+        actions = np.hstack([x[1] for x in data_list])
+        returns = np.hstack([x[2] for x in data_list])
+        return stategoals, actions, returns
 
+    padded_ep = generate_episodes_vec(agent, sample_moves, move_limit, episodes)
+    padded_her_ep = her_state_goals_last_state(agent, *padded_ep)
 
-    def compute_returns(ep_lengths: np.ndarray, gamma: float = 1) -> np.ndarray:
-        # TODO: optimalizace pokud vse skoncilo driv nez move limit
-        # TODO: vektorizace
-        returns = np.array([
-            -ep_lengths + i*gamma
-            for i in range(move_limit)
-        ])
-        return returns
-
-    def generate_episodes_vec(
-        agent: HERCubeAgent,
-        sample_moves: int,
-        move_limit: int,
-        number_of_episodes: int
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Generates `number_of_episodes` vectorized episodes with `sample_moves` lengths.
-        Goals are randomly scrambled cubes with `sample_moves` uniformly random moves.
-
-        Returns:
-            - States: ndarray, dtype=float, shape=[`move_limit`, `number_of_episodes`, 2 * cube features]
-            - Actions: ndarray, dtype=float, shape=[`move_limit`, `number_of_episodes`]
-            - Episode lengths: ndarray, dtype=int, shape=[`number_of_episodes`]
-        """
-        goals = kv.nova_kostka_vek(number_of_episodes)
-        kv.zamichej_nahodnymi_tahy_vek(goals, sample_moves)
-        finished = np.full(number_of_episodes, False)
-
-        CUBE_LEN = 6*3*3
-        states = kv.nova_kostka_vek(number_of_episodes)
-        ep_states = np.zeros([move_limit, number_of_episodes, 2*CUBE_LEN])
-        ep_actions = np.zeros([move_limit, number_of_episodes])
-        ep_lengths = np.zeros([number_of_episodes], dtype=int)
-
-        for i in range(move_limit):
-            is_terminal = kv.je_stejna(states, goals)
-            finished = np.logical_or(finished, is_terminal)
-            not_finished = np.logical_not(finished)
-            # TODO:
-            # if np.all(finished):
-            #     break
-
-            states_goals = agent.merge_states_and_goals(states, goals)
-            probs = agent.predict_action_probs(states_goals)
-            # TODO: zrychlit (https://stackoverflow.com/questions/64673562/is-there-a-vectorized-way-to-sample-multiples-times-with-np-random-choice-with)
-            actions = np.array([np.random.choice(len(p), p=p) for p in probs])
-            moves = agent.indexy_na_tahy(actions)
-            kv.tahni_tahy_vek(states, moves[None])
-
-            assert ep_states[i].shape == states_goals.shape
-            assert ep_actions[i].shape == actions.shape
-            ep_states[i] = states_goals
-            ep_actions[i] = actions
-            ep_lengths += not_finished
-        return ep_states, ep_actions, ep_lengths
-
-    def make_her_episodes_vek(states: np.ndarray, actions: np.ndarray):
-        her_goals = states[:, :6*3*3].reshape(-1, 6, 3, 3)
-        her_moves = agent.indexy_na_tahy(actions)
-        kv.tahni_tah_vek(her_goals, her_moves)
-        her_state_goals = agent.merge_states_and_goals(states[:, :6*3*3], her_goals)
-        returns = np.full(len(her_state_goals), -1)
-        return her_state_goals, actions, returns
-
-    assert episodes > 0, "Počet episod musí být alespoň 1."
-
-    states, actions, ep_lengths = generate_episodes_vec(agent, sample_moves, move_limit, episodes)
-    returns = compute_returns(ep_lengths)
-
-    num_transitions = ep_lengths.sum()
-    all_states = np.empty([num_transitions, 2*6*3*3], dtype=int)
-    all_actions = np.empty([num_transitions], dtype=int)
-    all_returns = np.empty(all_actions.shape)
-
-    # TODO: vektorizace
-    i = 0
-    for ep in range(episodes):
-        for t in range(ep_lengths[ep]):
-            all_states[i] = states[t, ep].reshape(2*6*3*3)
-            all_actions[i] = actions[t, ep]
-            all_returns[i] = returns[t, ep]
-            i += 1
-
-    her_states, her_actions, her_returns = make_her_episodes_vek(all_states, all_actions)
-    all_states = np.vstack((all_states, her_states))
-    all_actions = np.hstack((all_actions, her_actions))
-    all_returns = np.hstack((all_returns, her_returns))
-    assert np.all(np.logical_and(-move_limit <= all_returns, all_returns < 0))
-    return all_states, all_actions, all_returns
+    data = unroll_padded_episodes(*padded_ep)
+    her_data = unroll_padded_episodes(*padded_her_ep)
+    return data
+    
+    return merge_data([data, her_data])
 
 def solve_beam(goal: ko.Kostka, agent: HERCubeAgent, kandidatu: int, limit: int) -> int:
     #state = ko.nova_kostka()
@@ -245,15 +229,17 @@ def solve_beam_vek(goal: ko.Kostka, agent: HERCubeAgent, kandidatu: int, limit: 
 
 def solve_greedy_vek(cilova_kostka: kv.KostkaVek, agent: HERCubeAgent, limit: int) -> int:
     akt_kostka = kv.nova_kostka_vek(len(cilova_kostka))
-    slozene = np.full(len(cilova_kostka), False)
+    slozene = kv.je_stejna(akt_kostka, cilova_kostka)
     for _ in range(limit):
+        predikce = agent.predict_action_probs(agent.merge_states_and_goals(akt_kostka, cilova_kostka))
+        tahy = agent.indexy_na_tahy(np.argmax(predikce, axis=-1)) # type: ignore
+        
+        kv.tahni_tah_vek(akt_kostka, tahy)
+
         slozene = np.logical_or(slozene, kv.je_stejna(akt_kostka, cilova_kostka))
         if np.all(slozene):
             break
 
-        predikce = agent.predict_action_probs(agent.merge_states_and_goals(akt_kostka, cilova_kostka))
-        tahy = agent.indexy_na_tahy(np.argmax(predikce, axis=-1)) # type: ignore
-        kv.tahni_tah_vek(akt_kostka, tahy)
     return np.count_nonzero(slozene)
 
 def evaluate(agent: HERCubeAgent, batch_size: int, sample_moves: int, limit: int) -> None:
@@ -286,6 +272,14 @@ def train_her_cube(steps: int,
 
     for step in range(1, steps + 1):
         states, actions, returns = generate_batch(agent, train_episodes, train_sample_moves, train_ep_lim)
+        #for f, a, r in zip(states, actions, returns):
+        #    s = f[:6*3*3].reshape(6, 3, 3)
+        #    g = f[6*3*3:].reshape(6, 3, 3)
+        #    t = agent.indexy_na_tahy(np.array([a]))
+        #    print()
+        #    print(t, r)
+        #    ko.print_kostku(s)
+        #    ko.print_kostku(g)
         agent.train(states, actions, returns)
 
         bar.update()
@@ -309,6 +303,6 @@ if __name__ == "__main__":
         train_ep_lim=30,
         eval_each=100,
         eval_batch_size=100,
-        eval_sample_moves=5,
-        eval_ep_lim=30
+        eval_sample_moves=1,
+        eval_ep_lim=2
     )
