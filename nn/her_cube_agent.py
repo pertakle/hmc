@@ -9,14 +9,15 @@ class HERCubeAgent:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(self):
+        lr = 0.0001
         self.actor = Network(2*6*3*3*6, 12).to(self.device)
         self.actor.apply(wrappers.torch_init_with_xavier_and_zeros)
-        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=0.001)
+        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.actor_loss = torch.nn.CrossEntropyLoss(reduction="none")
 
         self.critic = Network(2*6*3*3*6, 1).to(self.device)
         self.critic.apply(wrappers.torch_init_with_xavier_and_zeros)
-        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=0.001)
+        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
         self.critic_loss = torch.nn.MSELoss()
 
         self.info = {}
@@ -51,7 +52,8 @@ class HERCubeAgent:
         self.actor.eval()
         with torch.no_grad():
             logits = self.actor(x)
-        return torch.nn.functional.softmax(logits, -1)
+        probs = torch.nn.functional.softmax(logits, -1)
+        return probs
 
     @wrappers.typed_torch_function(device, torch.float32)
     def predict_values(self, x):
@@ -68,7 +70,7 @@ class HERCubeAgent:
         logits = self.actor(states)
         v = self.critic(states).squeeze()
 
-        beta = 0.05
+        beta = 5
         actor_loss = torch.mean((returns - v.detach()) * self.actor_loss(logits, actions) - \
                                 beta * torch.distributions.Categorical(torch.softmax(logits, 1)).entropy())
 
