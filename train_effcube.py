@@ -114,9 +114,9 @@ if __name__ == "__main__":
     train_eff_cube(
         steps=100_000,
         batch_size=64,
-        sample_moves=15,
+        sample_moves=7,
         eval_each=100,
-        eval_batch_size=100,
-        eval_sample_moves=5,
-        eval_lim=30
+        eval_batch_size=10000,
+        eval_sample_moves=7,
+        eval_lim=7
     )

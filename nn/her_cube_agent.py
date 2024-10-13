@@ -3,13 +3,13 @@ import numpy as np
 from utils import wrappers
 from nn.network import Network
 import kostka.kostka_vek as kv
-import kostka.kostka as ko
 
 class HERCubeAgent:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(self):
-        lr = 0.0001
+        lr = 0.00005
+        self.beta = 0.9
         self.actor = Network(2*6*3*3*6, 12).to(self.device)
         self.actor.apply(wrappers.torch_init_with_xavier_and_zeros)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
@@ -70,10 +70,8 @@ class HERCubeAgent:
         logits = self.actor(states)
         v = self.critic(states).squeeze()
 
-        beta = 5
         actor_loss = torch.mean((returns - v.detach()) * self.actor_loss(logits, actions) - \
-                                beta * torch.distributions.Categorical(torch.softmax(logits, 1)).entropy())
-
+                                self.beta * torch.distributions.Categorical(torch.softmax(logits, 1)).entropy())
 
         actor_loss.backward()
         with torch.no_grad():
@@ -88,5 +86,9 @@ class HERCubeAgent:
 
         self.info["actor_loss"] = actor_loss.item()
         self.info["critic_loss"] = critic_loss.item()
+
+        entropy = torch.distributions.Categorical(torch.softmax(logits, 1)).entropy().mean().item()
+        max_entropy = torch.distributions.Categorical(torch.ones(12)/12).entropy().item()
+        self.info["entropy rate"] = entropy / max_entropy
 
 
