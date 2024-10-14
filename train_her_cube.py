@@ -215,7 +215,7 @@ def generate_batch(
 
     return merge_data([data, her_data])
 
-def solve_beam(goal: ko.Kostka, agent: HERCubeAgent, kandidatu: int, limit: int) -> int:
+def solve_beam(goal: ko.Kostka, agent: HERCubeAgent, beam_size: int, limit: int) -> int:
     # TODO: FIX
     kandidati = kv.nova_kostka_vek(1)
     pr_kandidatu = np.ones([1, 1])
@@ -228,12 +228,13 @@ def solve_beam(goal: ko.Kostka, agent: HERCubeAgent, kandidatu: int, limit: int)
         CUBE_FEATURES = 6*3*3
         states_goals = np.empty([kandidatu, 2*CUBE_FEATURES])
         states_goals[:, :CUBE_FEATURES] = kandidati.reshape(kandidatu, -1)
-        states_goals[:, CUBE_FEATURES:] = goal.reshape(-1)
+        states_goals[:, CUBE_FEATURES:] = goal.reshape(1, -1)
 
         predikce = agent.predict_action_probs(states_goals)
         pr_nasledniku = pr_kandidatu * predikce # type: ignore
+
         pr_nasledniku_vektor = pr_nasledniku.reshape(-1)
-        nej_indexy = np.argsort(pr_nasledniku_vektor)[-kandidatu:] # argsort setridi vzestupne
+        nej_indexy = np.argsort(pr_nasledniku_vektor)[-beam_size:] # argsort setridi vzestupne
 
         indexy_otcu = nej_indexy // 12
         indexy_tahu = nej_indexy % 12
@@ -245,9 +246,9 @@ def solve_beam(goal: ko.Kostka, agent: HERCubeAgent, kandidatu: int, limit: int)
 
         assert len(pr_kandidatu) == len(kandidati), f"Pocet kandidatu ({len(kandidati)}) a pravdepodobnosti ({len(pr_kandidatu)}) musi byt stejny."
         assert kandidati.shape[1:] == goal.shape, f"Nespravny tvar kandidatu {kandidati.shape}."
-        assert len(kandidati) <= kandidatu, f"Prilis mnoho kandidatu {len(kandidati)}, limit je {kandidatu}."
+        assert len(kandidati) <= beam_size, f"Prilis mnoho kandidatu {len(kandidati)}, limit je {kandidatu}."
 
-    return 1 if np.any(kv.je_slozena(kandidati)) else 0
+    return 1 if np.any(kv.je_stejna(kandidati, goal)) else 0
 
 def solve_beam_vek(goal: ko.Kostka, agent: HERCubeAgent, kandidatu: int, limit: int) -> int:
     solved = 0
@@ -270,11 +271,11 @@ def solve_greedy_vek(cilova_kostka: kv.KostkaVek, agent: HERCubeAgent, limit: in
 
     return np.count_nonzero(slozene)
 
-def evaluate(agent: HERCubeAgent, batch_size: int, sample_moves: int, limit: int) -> None:
+def evaluate(agent: HERCubeAgent, batch_size: int, sample_moves: int, limit: int, beam_size: int) -> None:
     goals = kv.nova_kostka_vek(batch_size)
     kv.zamichej_nahodnymi_tahy_vek(goals, sample_moves)
-    #num_solved = solve_beam_vek(goals, agent, 10, limit)
-    num_solved = solve_greedy_vek(goals, agent, limit)
+    num_solved = solve_beam_vek(goals, agent, beam_size, limit)
+    #num_solved = solve_greedy_vek(goals, agent, limit)
     agent.info["solved"] = f"{100*num_solved/batch_size:.2f} %"
 
 def format_float(x: float) -> str:
@@ -292,6 +293,7 @@ def train_her_cube(
         eval_batch_size: int,
         eval_sample_moves: int,
         eval_ep_lim: int,
+        eval_beam_size: int,
     ) -> HERCubeAgent:
 
     def new_bar(steps: int) -> tqdm.tqdm:
@@ -307,7 +309,7 @@ def train_her_cube(
 
         bar.update()
         if (step % eval_each) == 0 or step == steps:
-            evaluate(agent, eval_batch_size, eval_sample_moves, eval_ep_lim) # type: ignore
+            evaluate(agent, eval_batch_size, eval_sample_moves, eval_ep_lim, eval_beam_size) # type: ignore
 
             bar.bar_format = f'{{desc}} {format_info(agent.info)} [{{elapsed}}, {{rate_fmt}}{{postfix}}]'
             bar.set_description(f"Evaluation after {step} steps", False)
@@ -321,11 +323,12 @@ def train_her_cube(
 if __name__ == "__main__":
     train_her_cube(
         steps=100_000,
-        train_episodes=64,
-        train_sample_moves=7,
-        train_ep_lim=7,
+        train_episodes=256,
+        train_sample_moves=15,
+        train_ep_lim=15,
         eval_each=100,
-        eval_batch_size=10000,
-        eval_sample_moves=7,
-        eval_ep_lim=7,
+        eval_batch_size=100,
+        eval_sample_moves=15,
+        eval_ep_lim=15,
+        eval_beam_size=1024,
     )
