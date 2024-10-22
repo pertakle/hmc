@@ -1,8 +1,8 @@
 
-from nn.eff_cube_agent import EffCubeAgent
+from deepercube.nn.eff_cube_agent import EffCubeAgent
 import numpy as np
-import kostka.kostka_vek as kv
-import kostka.kostka as ko
+import deepercube.kostka.kostka_vek as kv
+import deepercube.kostka.kostka as ko
 import tqdm
 from typing import Any
 

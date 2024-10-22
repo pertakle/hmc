@@ -1,5 +1,5 @@
 import torch
-from utils import wrappers
+from deepercube.utils import wrappers
 import numpy as np
 
 def res_block():

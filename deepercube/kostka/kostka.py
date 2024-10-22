@@ -1,11 +1,13 @@
 import numpy as np
-from utils import utils as ut
-from typing import Iterable
+from deepercube.utils import utils as ut
+from typing import Iterable, Tuple
 
-Kostka = np.ndarray
+ColorT = np.uint8
+Kostka = np.ndarray[Tuple[6, 3, 3], np.dtype[ColorT]]
+
 
 def nova_kostka() -> Kostka:
-    kostka = np.zeros((6,3,3), dtype=np.uint8)
+    kostka = np.zeros((6,3,3), dtype=ColorT)
     for barva in range(6):
         kostka[barva] = barva# + 1
     return kostka

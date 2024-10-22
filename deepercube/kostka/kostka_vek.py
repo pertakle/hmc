@@ -1,15 +1,15 @@
-from utils import utils as ut
-from kostka import kostka as ko
+from deepercube.utils import utils as ut
+from deepercube.kostka import kostka as ko
 import numpy as np
-from typing import Any
+from typing import Any, Tuple
 
 
-KostkaVek = np.ndarray
+KostkaVek = np.ndarray[Tuple[-1, 6, 3, 3], np.dtype[ko.ColorT]]
 
 def nova_kostka_vek(n: int) -> KostkaVek:
     return np.stack([ko.SLOZENA_KOSTKA]*n, dtype=ko.SLOZENA_KOSTKA.dtype)
 
-def je_stejna(kostka1: KostkaVek, kostka2: KostkaVek) -> np.ndarray:
+def je_stejna(kostka1: KostkaVek, kostka2: KostkaVek|ko.Kostka) -> np.ndarray:
     return np.all(kostka1 == kostka2, axis=(1,2,3))
 
 def je_slozena(kostka: KostkaVek) -> np.ndarray:

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-from utils import wrappers
-from nn.network import Network
+from deepercube.utils import wrappers
+from deepercube.nn.network import Network
 
 class EffCubeAgent:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
