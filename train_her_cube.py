@@ -1,9 +1,9 @@
 import numpy as np
+import tqdm
 from typing import Any, Tuple, List
-from deepercube.nn.her_cube_agent import A2CCubeAgent, SACHERCubeAgent
+from deepercube.nn.a2c import A2CCubeAgent
 import deepercube.kostka.kostka_vek as kv
 import deepercube.kostka.kostka as ko
-import tqdm
 from deepercube.utils import data_gen
 from deepercube.utils import solver
 

@@ -1,9 +1,11 @@
+from deepercube.nn.her_cube_agent import HERCubeAgent
+import torch
 import numpy as np
 
-class HERCubeAgent:
+class DQNAgent(HERCubeAgent):
 
     def __init__(self) -> None:
-        self.info = {}
+        super().__init__()
 
     def predict_move(self, stategals: np.ndarray, greedy: float) -> np.ndarray:
         raise NotImplementedError

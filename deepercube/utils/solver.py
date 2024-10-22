@@ -1,4 +1,4 @@
-from deepercube.nn.her_cube_agent import A2CCubeAgent
+from deepercube.nn.a2c import A2CCubeAgent
 import numpy as np
 import numpy.typing as npt
 import deepercube.kostka.kostka as ko

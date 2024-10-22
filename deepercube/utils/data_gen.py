@@ -1,5 +1,5 @@
 import numpy as np
-from deepercube.nn.her_cube_agent import A2CCubeAgent
+from deepercube.nn.a2c import A2CCubeAgent
 from typing import Tuple, List
 import deepercube.kostka.kostka as ko
 import deepercube.kostka.kostka_vek as kv
