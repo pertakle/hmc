@@ -20,6 +20,9 @@ class DQNAgent(HERCubeAgent):
         self.opt = torch.optim.Adam(self.model.parameters())
         self.loss = torch.nn.MSELoss()
 
+        self.train_counter = 0
+        self.copy_each = 100
+
     @wrappers.typed_torch_function(device, torch.float32, float)
     def predict_move(self, stategoals: torch.Tensor, greedy: float) -> torch.Tensor: # type: ignore
         self.model.eval()
@@ -30,10 +33,28 @@ class DQNAgent(HERCubeAgent):
         return torch.randint(0, 13, size=stategoals.shape[:1], generator=self.rng)
 
     
-    def train(self, episodes: np.ndarray) -> None:
-        pass
+    @wrappers.typed_torch_function(device, torch.float32)
+    def train(self, episodes: np.ndarray) -> None: # type: ignore
+        self.model.train()
+        #predictions = self._model(states)
+        #loss = self._loss(predictions, q_values)
+        #self._optimizer.zero_grad()
+        #loss.backward()
+        #with torch.no_grad():
+        #    self._optimizer.step()
 
+        self.train_counter += 1
+        if self.train_counter == self.copy_each:
+            self.copy_weights()
+            self.train_counter = 0
 
+    def compute_returns(self, episodes: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    def compute_ep_lengths(self, episodes: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
 
     def copy_weights(self) -> None:
         self.model.load_state_dict(self.target_network.state_dict())
+
+
