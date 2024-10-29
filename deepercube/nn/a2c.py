@@ -5,12 +5,15 @@ from deepercube.utils import wrappers
 from deepercube.nn.network import Network
 import deepercube.kostka.kostka_vek as kv
 from typing import Dict
+from deepercube.nn.her_cube_agent import HERCubeAgent
 
 
 class A2CCubeAgent:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(self):
+        super().__init__()
+
         lr = 0.00005
         self.beta = 27
         self.actor = Network(2*6*3*3*6, 12).to(self.device)
@@ -23,32 +26,7 @@ class A2CCubeAgent:
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
         self.critic_loss = torch.nn.MSELoss()
 
-        self.info = {}
-
-    def tahy_na_indexy(self, tahy: torch.Tensor) -> torch.Tensor:
-        """Prevede tahy {-6,..,-1,1,..6} na indexy {0..12}"""
-        minus_tahy = (tahy<0).type(torch.int64)
-        indexy = tahy.type(torch.int64) - minus_tahy * 6
-        indexy -= 2*indexy*minus_tahy
-        indexy -= 1
-        return indexy
-
-    def indexy_na_tahy(self, indexy: np.ndarray) -> np.ndarray:
-        """Prevede indexy {0..12} na tahy {-6,..,-1,1,..6}"""
-        minus_tahy = (indexy > 5).astype(np.int64)
-        tahy = indexy + 1
-        tahy -= 2*indexy*minus_tahy
-        tahy += 4*minus_tahy
-        return tahy
-
-    def merge_states_and_goals(self, states: kv.KostkaVek, goals: kv.KostkaVek) -> np.ndarray:
-        assert np.prod(states.shape) == np.prod(goals.shape)
-        batch_size = states.shape[0]
-        CUBE_LEN = 6*3*3
-        state_goal = np.empty([batch_size, 2*CUBE_LEN], dtype=states.dtype)
-        state_goal[:, :CUBE_LEN] = states.reshape(batch_size, CUBE_LEN)
-        state_goal[:, CUBE_LEN:] = goals.reshape(-1, CUBE_LEN)
-        return state_goal
+        self.info = {} # already from HERCubeAgent
 
     @wrappers.typed_torch_function(device, torch.float32)
     def predict_action_probs(self, x):

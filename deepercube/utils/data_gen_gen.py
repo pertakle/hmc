@@ -1,7 +1,6 @@
 import numpy as np
 from deepercube.nn.her_cube_agent import HERCubeAgent
 from typing import Tuple, List
-import deepercube.kostka.kostka as ko
 import deepercube.kostka.kostka_vek as kv
 
 def compute_ep_lengths(episodes: np.ndarray) -> np.ndarray:
@@ -25,37 +24,8 @@ def set_goals(episodes: np.ndarray, goals: np.ndarray) -> np.ndarray:
     new_episodes[:, :, CUBE_FEATURES:] = goals
     return new_episodes
 
-def compute_returns(agent: A2CCubeAgent, episodes: np.ndarray, ep_lengths: np.ndarray) -> np.ndarray:
-    """
-    Params:
-        - agent: current agent
-        - episodes: shape=[num episodes, max ep len, features], 
-        all episodes are padded to the length of the longest episode
-        - ep_lengths: lengths of episodes
-    
-    Returns:
-        - returns: reward is -1 for each step, gamma is 1
-    """
-    EPISODES = episodes.shape[0]
-    MOVE_LIMIT = episodes.shape[1] - 1
-    GAMMA = 1
-    last_next_stategoals = get_last_next_stategoals(episodes, ep_lengths)
-    v_last_next_stategoals: np.ndarray = agent.predict_values(last_next_stategoals).squeeze() #type: ignore
-    terminal = stategoal_terminal(last_next_stategoals)
-    returns_t = -1 + GAMMA * v_last_next_stategoals * np.logical_not(terminal)
-    returns = np.zeros([EPISODES, MOVE_LIMIT], dtype=np.float64)
-    for t in range(MOVE_LIMIT - 1, -1, -1): # for steps backward
-        returns[:, t] = returns_t
-        returns_t = -1 + GAMMA * returns_t
-    return returns
-
 EpData = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-def generate_episodes_vec(
-    agent: HERCubeAgent,
-    sample_moves: int,
-    move_limit: int,
-    episodes: int
-    ) -> EpData:
+def generate_episodes_vec(agent: HERCubeAgent, sample_moves: int, move_limit: int, episodes: int) -> EpData:
     """
     Generates `episodes` vectorized episodes with `sample_moves` lengths.
     Goals are randomly scrambled cubes with `sample_moves` uniformly random moves.
@@ -112,8 +82,8 @@ def stategoal_terminal(stategoals: np.ndarray) -> np.ndarray:
 
 def make_her_last_state(
         episodes: np.ndarray, 
-        actions: np.ndarray,
-        rewards: np.ndarray,
+        actions: np.ndarray, 
+        rewards: np.ndarray, 
         ep_lengths: np.ndarray
     ) -> EpData:
     """
@@ -158,7 +128,7 @@ def unroll_padded_episodes(
         rewards: np.ndarray,
         ep_lengths: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Unrolls all episodes and actions into batch of data.
+    """Unrolls all episodes and actions into a batch of data.
 
     Params:
         - episodes:
@@ -188,7 +158,8 @@ def unroll_padded_episodes(
             transition += 1
     return unrolled_stategoals, unrolled_actions, unrolled_rewards
 
-def merge_data(eps_data: List[EpData]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+BatchedData = Tuple[np.ndarray, np.ndarray, np.ndarray]
+def merge_data(eps_data: List[BatchedData]) -> BatchedData:
     """Converts list of multiple episodes data into a single batch of stategoals, actions and rewards."""
     stategoals = np.vstack([x[0] for x in eps_data])
     actions = np.hstack([x[1] for x in eps_data])
@@ -197,22 +168,39 @@ def merge_data(eps_data: List[EpData]) -> Tuple[np.ndarray, np.ndarray, np.ndarr
 
 def merge_to_stategoals(states: np.ndarray, goals: np.ndarray) -> np.ndarray:
     """
-    Merges `states` with their corresponding `goals`. returns:
+    Merges `states` with their corresponding `goals`.
+    Returns:
         merged stategoals
     """
-    raise NotImplementedError
+    assert np.prod(states.shape) == np.prod(goals.shape)
+    batch_size = states.shape[0]
+    CUBE_LEN = 6*3*3
+    state_goal = np.empty([batch_size, 2*CUBE_LEN], dtype=states.dtype)
+    state_goal[:, :CUBE_LEN] = states.reshape(batch_size, CUBE_LEN)
+    state_goal[:, CUBE_LEN:] = goals.reshape(-1, CUBE_LEN)
+    return state_goal
+
 
 def actions_to_moves(actions: np.ndarray) -> np.ndarray:
     """
     Converts `actions` (0..11) to moves (-6..1,1..6).
     """
-    raise NotImplementedError
+    minus_moves = (actions > 5).astype(np.int64)
+    moves = actions + 1
+    moves -= 2 * actions * minus_moves
+    moves += 4 * minus_moves
+    return moves
+
 
 def moves_to_actions(moves: np.ndarray) -> np.ndarray:
     """
     Converts `moves` (-6..1,1..6) to actions (0..11).
     """
-    raise NotImplementedError
+    minus_moves = (moves < 0).astype(np.int64)
+    actions = moves.astype(np.int64) - minus_moves * 6
+    actions -= 2 * actions * minus_moves
+    actions -= 1
+    return actions
 
 
 def generate_batch(
@@ -220,7 +208,7 @@ def generate_batch(
         episodes: int, 
         sample_moves: int, 
         move_limit: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> BatchedData:
 
     ep_data = generate_episodes_vec(agent, sample_moves, move_limit, episodes)
     her_ep_data = make_her_last_state(*ep_data)
@@ -228,5 +216,4 @@ def generate_batch(
     data = unroll_padded_episodes(*ep_data)
     her_data = unroll_padded_episodes(*her_ep_data)
 
-    # TODO: spatny typ!!
     return merge_data([data, her_data])

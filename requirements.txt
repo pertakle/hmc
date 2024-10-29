@@ -3,3 +3,4 @@ torch~=2.2.0
 numpy
 perfplot
 tqdm
+gymnasium==1.0.0
