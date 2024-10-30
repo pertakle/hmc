@@ -1,11 +1,76 @@
 import gymnasium as gym
-from typing import Optional, SupportsFloat, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, SupportsFloat
 import numpy as np
 import numpy.typing as npt
 import deepercube.kostka.kostka_vek as kv
-import deepercube.utils.data_gen as dg
+import deepercube.kostka.kostka as ko
 
 class RubiksCubeEnv(gym.Env):
+    
+    def __init__(self, scramble_len: int, ep_limit: int) -> None:
+        super().__init__()
+        self._scramble_len = scramble_len
+        self._ep_limit = ep_limit
+        self._made_steps = 0
+        self._cube = ko.nova_kostka()
+        self._goal = ko.nova_kostka()
+
+        self.action_space = gym.spaces.Discrete(12)
+        self.observation_space = gym.spaces.Box(low=0, high=5, shape=(108,), dtype=np.uint8)
+
+    def _get_observation(self) -> npt.NDArray:
+        CUBE_LEN = 6*3*3
+
+        state_goal = np.empty([2*CUBE_LEN], dtype=self._cube.dtype)
+        state_goal[:CUBE_LEN] = self._cube.reshape(CUBE_LEN)
+        state_goal[CUBE_LEN:] = self._goal.reshape(CUBE_LEN)
+        return state_goal
+
+    def _action_to_move(self, action: int) -> int:
+        minus_move = int(action > 5)
+        move = action + 1
+        move -= 2 * action * minus_move
+        move += 4 * minus_move
+        return move
+
+    def _get_info(self) -> Dict:
+        return {}
+
+    def _is_solved(self) -> bool:
+        res = ko.je_stejna(self._cube, self._goal)
+        return res
+
+    def _move_cube(self, action: int) -> None:
+        move = self._action_to_move(action)
+        ko.tahni_tah(self._cube, move)
+
+
+    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[npt.NDArray, Dict]:
+        super().reset(seed=seed)
+
+        self._cube = ko.nova_kostka()
+        self._goal = ko.nova_kostka()
+        ko.zamichej(self._goal, self._scramble_len) # TODO: vyuzit self.random...
+        self._made_steps = 0
+
+        obs = self._get_observation()
+        info = self._get_info()
+        return obs, info
+
+    def step(self, action: int) -> Tuple[npt.NDArray, SupportsFloat, bool, bool, Dict[str, Any]]: 
+        self._move_cube(action)
+        self._made_steps += 1
+
+        reward = -1
+        terminated = self._is_solved()
+        truncated = self._made_steps >= self._ep_limit
+
+        obs = self._get_observation()
+        info = self._get_info()
+
+        return obs, reward, terminated, truncated, info
+
+class RubiksCubeEnvVec(gym.vector.VectorEnv):
     
     def __init__(self, num_envs: int, scramble_len: int, ep_limit: int) -> None:
         super().__init__()
@@ -16,7 +81,8 @@ class RubiksCubeEnv(gym.Env):
         self._cubes = kv.nova_kostka_vek(num_envs)
         self._goals = kv.nova_kostka_vek(num_envs)
 
-        self.action_space = gym.spaces.Discrete(12)
+        self.single_action_space = gym.spaces.Discrete(12)
+        self.action_space = gym.spaces.MultiDiscrete([12] * num_envs)
         self.observation_space = gym.spaces.Box(low=0, high=5, shape=(num_envs, 108), dtype=np.uint8)
 
     def _get_observation(self) -> npt.NDArray:
@@ -53,14 +119,11 @@ class RubiksCubeEnv(gym.Env):
         Returns:
             - ndarray (num_envs,) of type bool
         """
-        # TODO: check shape - 1d or (-1, 1) 2d
         res = kv.je_stejna(self._cubes, self._goals)
-        assert len(res.shape) == 1
         return res
 
     def _move_cubes(self, actions: npt.NDArray) -> None:
         moves = self._actions_to_moves(actions)
-        print("taken moves:", moves)
         kv.tahni_tah_vek(self._cubes, moves)
 
 
@@ -76,9 +139,7 @@ class RubiksCubeEnv(gym.Env):
         info = self._get_info()
         return obs, info
 
-    # gym.Env thinks it is a single env and does not like array of rewards etc.
-    def step(self, actions: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray, Dict]: # type: ignore
-        print("taken actions:", actions)
+    def step(self, actions: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray, Dict[str, Any]]: 
         assert len(actions.shape) == 1
         assert actions.shape[0] == self._num_envs
 
