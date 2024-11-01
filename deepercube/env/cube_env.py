@@ -19,6 +19,11 @@ class RubiksCubeEnv(gym.Env):
         self.observation_space = gym.spaces.Box(low=0, high=5, shape=(108,), dtype=np.uint8)
 
     def _get_observation(self) -> npt.NDArray:
+        """
+        Merges `state` with the `goal`.
+        Returns:
+            merged stategoal - array (108,) of ints
+        """
         CUBE_LEN = 6*3*3
 
         state_goal = np.empty([2*CUBE_LEN], dtype=self._cube.dtype)
@@ -27,6 +32,9 @@ class RubiksCubeEnv(gym.Env):
         return state_goal
 
     def _action_to_move(self, action: int) -> int:
+        """
+        Converts `action` (0..11) to move (-6..1,1..6).
+        """
         minus_move = int(action > 5)
         move = action + 1
         move -= 2 * action * minus_move
@@ -37,10 +45,19 @@ class RubiksCubeEnv(gym.Env):
         return {}
 
     def _is_solved(self) -> bool:
+        """
+        Checks the cube to be equal to it's goal.
+
+        Returns:
+            - bool: True if the cube is same as the goal
+        """
         res = ko.je_stejna(self._cube, self._goal)
         return res
 
     def _move_cube(self, action: int) -> None:
+        """
+        Perform action on the cube.
+        """
         move = self._action_to_move(action)
         ko.tahni_tah(self._cube, move)
 
@@ -75,15 +92,21 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
     def __init__(self, num_envs: int, scramble_len: int, ep_limit: int) -> None:
         super().__init__()
         self._num_envs = num_envs
+        self._cube_features = 6 * 3 * 3
+        self._colors = 6
+        self._actions = 12
         self._scramble_len = scramble_len
         self._ep_limit = ep_limit
         self._made_steps = 0
         self._cubes = kv.nova_kostka_vek(num_envs)
         self._goals = kv.nova_kostka_vek(num_envs)
+        self._auto_reseting = np.full(num_envs, False)
 
-        self.single_action_space = gym.spaces.Discrete(12)
-        self.action_space = gym.spaces.MultiDiscrete([12] * num_envs)
-        self.observation_space = gym.spaces.Box(low=0, high=5, shape=(num_envs, 108), dtype=np.uint8)
+        self.single_action_space = gym.spaces.Discrete(self._actions)
+        self.single_observation_space = gym.spaces.MultiDiscrete(np.full(self._cube_features, self._colors))
+
+        self.action_space = gym.spaces.MultiDiscrete(np.full(num_envs, self._actions))
+        self.observation_space = gym.spaces.MultiDiscrete(np.full([num_envs, self._cube_features], self._colors))
 
     def _get_observation(self) -> npt.NDArray:
         """
@@ -123,9 +146,14 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
         return res
 
     def _move_cubes(self, actions: npt.NDArray) -> None:
+        """
+        Perform actions on the cubes.
+        """
         moves = self._actions_to_moves(actions)
         kv.tahni_tah_vek(self._cubes, moves)
 
+    def _autoreset(self) -> None:
+        ...
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[npt.NDArray, Dict]:
         super().reset(seed=seed)

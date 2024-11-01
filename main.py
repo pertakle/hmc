@@ -3,24 +3,10 @@ import gymnasium as gym
 import deepercube.kostka.kostka_vek as kv
 import numpy as np
 
-
 ENVS = 3
 env = gym.make("deepercube/RubiksCube-v0", scramble_len=1, ep_limit=2)
-venv = gym.make_vec("deepercube/RubiksCube-v0", num_envs=ENVS, vectorization_mode="sync", scramble_len=1, ep_limit=2)
-venv = RubiksCubeEnvVec(ENVS, 1, 2)
-print(venv.single_action_space, venv.action_space)
-print(venv.observation_space)
-s = venv.reset()
-ns = venv.step(np.ones(ENVS, dtype=int))
-kv.print_kostku_vek(venv._cubes)
+venv = gym.make_vec("deepercube/RubiksCube-v0", num_envs=ENVS, vectorization_mode=None, scramble_len=1, ep_limit=2)
 
-print()
-print()
-print(env.action_space)
-print(env.observation_space)
-
-
-exit()
 def reset(env):
     print("reseting")
     state = env.reset()[0]

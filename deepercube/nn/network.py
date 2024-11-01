@@ -1,6 +1,5 @@
 import torch
 from deepercube.utils import wrappers
-import numpy as np
 
 def res_block():
     return torch.nn.Sequential(
@@ -12,9 +11,18 @@ def res_block():
     )
 # https://github.com/forestagostinelli/DeepCubeA/blob/master/utils/pytorch_models.py
 
+class OneHot(torch.nn.Module):
+    def __init__(self, num_classes: int) -> None:
+        self.num_classes = num_classes
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.one_hot(x, self.num_classes)
+
+
 class Network(torch.nn.Module):
-    def __init__(self, in_size: int, out_size: int) -> None:
+    def __init__(self, in_bound: int, in_size: int, out_size: int) -> None:
         super().__init__()
+        self.one_hot = OneHot(in_bound)
 
         self.relu = torch.nn.ReLU()
 
@@ -30,8 +38,7 @@ class Network(torch.nn.Module):
         self.apply(wrappers.torch_init_with_xavier_and_zeros)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B = x.shape[0]
-        x = torch.nn.functional.one_hot(x.reshape([B, -1]).type(torch.long), 6).reshape([B, -1]).type(torch.float32)
+        x = self.one_hot(x).type(torch.float32)
         hidden = self.l1(x)
         hidden = self.bn1(hidden)
         hidden = self.relu(hidden)
