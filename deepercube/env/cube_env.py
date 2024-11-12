@@ -91,13 +91,13 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
     
     def __init__(self, num_envs: int, scramble_len: int, ep_limit: int) -> None:
         super().__init__()
-        self._num_envs = num_envs
+        self.num_envs = num_envs
         self._cube_features = 6 * 3 * 3
         self._colors = 6
         self._actions = 12
         self._scramble_len = scramble_len
         self._ep_limit = ep_limit
-        self._made_steps = 0
+        self._made_steps = np.zeros(num_envs, dtype=np.uint64)
         self._cubes = kv.nova_kostka_vek(num_envs)
         self._goals = kv.nova_kostka_vek(num_envs)
         self._auto_reseting = np.full(num_envs, False)
@@ -153,30 +153,49 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
         kv.tahni_tah_vek(self._cubes, moves)
 
     def _autoreset(self) -> None:
-        ...
+        """
+        Resets envs acording to `self._auto_reseting`.
+        """
+        num_of_reset = np.count_nonzero(self._auto_reseting)
+        if num_of_reset == 0: # Cube operations would break
+            return
+
+        # set cubes to start
+        self._cubes[self._auto_reseting] = kv.nova_kostka_vek(num_of_reset)
+
+        # sample new goals
+        new_goals = kv.nova_kostka_vek(num_of_reset)
+        kv.zamichej_nahodnymi_tahy_vek(new_goals, self._scramble_len) # TODO: vyuzit self.random...
+        self._goals[self._auto_reseting] = new_goals
+
+        # made steps to zeros
+        self._made_steps *= np.logical_not(self._auto_reseting)
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[npt.NDArray, Dict]:
         super().reset(seed=seed)
 
-        self._cubes = kv.nova_kostka_vek(self._num_envs)
-        self._goals = kv.nova_kostka_vek(self._num_envs)
+        self._cubes = kv.nova_kostka_vek(self.num_envs)
+        self._goals = kv.nova_kostka_vek(self.num_envs)
         kv.zamichej_nahodnymi_tahy_vek(self._goals, self._scramble_len) # TODO: vyuzit self.random...
-        self._made_steps = 0
+        self._made_steps *= 0
 
         obs = self._get_observation()
         info = self._get_info()
         return obs, info
 
     def step(self, actions: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray, Dict[str, Any]]: 
-        assert len(actions.shape) == 1
-        assert actions.shape[0] == self._num_envs
+        assert len(actions.shape) == 1, "Actions should be a 1D vector of actions."
+        assert actions.shape[0] == self.num_envs, "Invalid number of actions provided."
 
         self._move_cubes(actions)
         self._made_steps += 1
+        self._autoreset()
 
-        rewards = -np.ones(self._num_envs)
+        rewards = -np.ones(self.num_envs)
         terminated = self._is_solved()
-        truncated = np.full(terminated.shape, self._made_steps >= self._ep_limit)
+        truncated = self._made_steps >= self._ep_limit
+
+        self._auto_reseting = np.logical_or(terminated, truncated)
 
         obs = self._get_observation()
         info = self._get_info()
