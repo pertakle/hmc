@@ -1,12 +1,14 @@
-from deepercube.nn.agent import Agent
-from deepercube.nn.network import Network
+from ..nn.network import Network
 from deepercube.utils import wrappers
 import numpy as np
 import copy
 import torch
 
 
-class DQNAgent(Agent):
+class Rainbow:
+    """
+    Rainbow agent class.
+    """
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -23,27 +25,17 @@ class DQNAgent(Agent):
         self.copy_each = 100
 
     @wrappers.typed_torch_function(device, torch.int32, float)
-    def predict_moves(self, states: torch.Tensor, greedy: float) -> torch.Tensor: # type: ignore
-        # TODO: Noisy nets need eval()/train()
-        if greedy:
-            self.model.eval()
-        else:
-            self.model.train()
-
+    def predict_moves(self, states: torch.Tensor) -> torch.Tensor:  # type: ignore
+        self.model.eval()
         with torch.no_grad():
             q_values = self.model(states)
-        # Noisy nets still explore
         return torch.argmax(q_values, -1)
 
-
-    def predict_values(self, states):
-        raise NotImplementedError
-    
     @wrappers.typed_torch_function(device, torch.float32)
-    def train(self, states: torch.Tensor, actions: torch.Tensor, returns: torch.Tensor) -> None:
+    def train(
+        self, states: torch.Tensor, actions: torch.Tensor, returns: torch.Tensor
+    ) -> torch.Tensor:
         raise NotImplementedError
 
     def copy_weights(self) -> None:
         self.model.load_state_dict(self.target_network.state_dict())
-
-

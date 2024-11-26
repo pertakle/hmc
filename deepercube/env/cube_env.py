@@ -5,8 +5,9 @@ import numpy.typing as npt
 import deepercube.kostka.kostka_vek as kv
 import deepercube.kostka.kostka as ko
 
+
 class RubiksCubeEnv(gym.Env):
-    
+
     def __init__(self, scramble_len: int, ep_limit: int) -> None:
         super().__init__()
         self._scramble_len = scramble_len
@@ -15,8 +16,14 @@ class RubiksCubeEnv(gym.Env):
         self._cube = ko.nova_kostka()
         self._goal = ko.nova_kostka()
 
-        self.action_space = gym.spaces.Discrete(12)
-        self.observation_space = gym.spaces.Box(low=0, high=5, shape=(108,), dtype=np.uint8)
+        self._cube_features = 6 * 3 * 3
+        self._colors = 6
+        self._actions = 12
+
+        self.action_space = gym.spaces.Discrete(self._actions)
+        self.observation_space = gym.spaces.MultiDiscrete(
+            np.full(self._cube_features, self._colors), dtype=np.uint8
+        )
 
     def _get_observation(self) -> npt.NDArray:
         """
@@ -24,9 +31,9 @@ class RubiksCubeEnv(gym.Env):
         Returns:
             merged stategoal - array (108,) of ints
         """
-        CUBE_LEN = 6*3*3
+        CUBE_LEN = 6 * 3 * 3
 
-        state_goal = np.empty([2*CUBE_LEN], dtype=self._cube.dtype)
+        state_goal = np.empty([2 * CUBE_LEN], dtype=self._cube.dtype)
         state_goal[:CUBE_LEN] = self._cube.reshape(CUBE_LEN)
         state_goal[CUBE_LEN:] = self._goal.reshape(CUBE_LEN)
         return state_goal
@@ -61,20 +68,23 @@ class RubiksCubeEnv(gym.Env):
         move = self._action_to_move(action)
         ko.tahni_tah(self._cube, move)
 
-
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[npt.NDArray, Dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None
+    ) -> Tuple[npt.NDArray, Dict]:
         super().reset(seed=seed)
 
         self._cube = ko.nova_kostka()
         self._goal = ko.nova_kostka()
-        ko.zamichej(self._goal, self._scramble_len) # TODO: vyuzit self.random...
+        ko.zamichej(self._goal, self._scramble_len)  # TODO: vyuzit self.random...
         self._made_steps = 0
 
         obs = self._get_observation()
         info = self._get_info()
         return obs, info
 
-    def step(self, action: int) -> Tuple[npt.NDArray, SupportsFloat, bool, bool, Dict[str, Any]]: 
+    def step(
+        self, action: int
+    ) -> Tuple[npt.NDArray, SupportsFloat, bool, bool, Dict[str, Any]]:
         self._move_cube(action)
         self._made_steps += 1
 
@@ -87,8 +97,9 @@ class RubiksCubeEnv(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
+
 class RubiksCubeEnvVec(gym.vector.VectorEnv):
-    
+
     def __init__(self, num_envs: int, scramble_len: int, ep_limit: int) -> None:
         super().__init__()
         self.num_envs = num_envs
@@ -103,10 +114,14 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
         self._auto_reseting = np.full(num_envs, False)
 
         self.single_action_space = gym.spaces.Discrete(self._actions)
-        self.single_observation_space = gym.spaces.MultiDiscrete(np.full(self._cube_features, self._colors))
+        self.single_observation_space = gym.spaces.MultiDiscrete(
+            np.full(self._cube_features, self._colors)
+        )
 
         self.action_space = gym.spaces.MultiDiscrete(np.full(num_envs, self._actions))
-        self.observation_space = gym.spaces.MultiDiscrete(np.full([num_envs, self._cube_features], self._colors))
+        self.observation_space = gym.spaces.MultiDiscrete(
+            np.full([num_envs, self._cube_features], self._colors)
+        )
 
     def _get_observation(self) -> npt.NDArray:
         """
@@ -115,9 +130,9 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
             merged stategoals - array (batch, 108) of ints
         """
         batch_size = self._cubes.shape[0]
-        CUBE_LEN = 6*3*3
+        CUBE_LEN = 6 * 3 * 3
 
-        state_goal = np.empty([batch_size, 2*CUBE_LEN], dtype=self._cubes.dtype)
+        state_goal = np.empty([batch_size, 2 * CUBE_LEN], dtype=self._cubes.dtype)
         state_goal[:, :CUBE_LEN] = self._cubes.reshape(batch_size, CUBE_LEN)
         state_goal[:, CUBE_LEN:] = self._goals.reshape(-1, CUBE_LEN)
         return state_goal
@@ -157,7 +172,7 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
         Resets envs acording to `self._auto_reseting`.
         """
         num_of_reset = np.count_nonzero(self._auto_reseting)
-        if num_of_reset == 0: # Cube operations would break
+        if num_of_reset == 0:  # Cube operations would break
             return
 
         # set cubes to start
@@ -165,25 +180,33 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
 
         # sample new goals
         new_goals = kv.nova_kostka_vek(num_of_reset)
-        kv.zamichej_nahodnymi_tahy_vek(new_goals, self._scramble_len) # TODO: vyuzit self.random...
+        kv.zamichej_nahodnymi_tahy_vek(
+            new_goals, self._scramble_len
+        )  # TODO: vyuzit self.random...
         self._goals[self._auto_reseting] = new_goals
 
         # made steps to zeros
         self._made_steps *= np.logical_not(self._auto_reseting)
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[npt.NDArray, Dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None
+    ) -> Tuple[npt.NDArray, Dict]:
         super().reset(seed=seed)
 
         self._cubes = kv.nova_kostka_vek(self.num_envs)
         self._goals = kv.nova_kostka_vek(self.num_envs)
-        kv.zamichej_nahodnymi_tahy_vek(self._goals, self._scramble_len) # TODO: vyuzit self.random...
+        kv.zamichej_nahodnymi_tahy_vek(
+            self._goals, self._scramble_len
+        )  # TODO: vyuzit self.random...
         self._made_steps *= 0
 
         obs = self._get_observation()
         info = self._get_info()
         return obs, info
 
-    def step(self, actions: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray, Dict[str, Any]]: 
+    def step(
+        self, actions: npt.NDArray
+    ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray, Dict[str, Any]]:
         assert len(actions.shape) == 1, "Actions should be a 1D vector of actions."
         assert actions.shape[0] == self.num_envs, "Invalid number of actions provided."
 

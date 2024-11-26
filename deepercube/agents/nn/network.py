@@ -1,15 +1,19 @@
 import torch
 from deepercube.utils import wrappers
 
+
 def res_block():
     return torch.nn.Sequential(
         torch.nn.Linear(1000, 1000, bias=False),
         torch.nn.BatchNorm1d(1000),
         torch.nn.ReLU(),
         torch.nn.Linear(1000, 1000),
-        torch.nn.BatchNorm1d(1000)
+        torch.nn.BatchNorm1d(1000),
     )
+
+
 # https://github.com/forestagostinelli/DeepCubeA/blob/master/utils/pytorch_models.py
+
 
 class OneHot(torch.nn.Module):
     def __init__(self, num_classes: int) -> None:
@@ -55,4 +59,3 @@ class Network(torch.nn.Module):
 
         out = self.out(hidden)
         return out
-

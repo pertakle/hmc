@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def typed_torch_function(device, *types, via_np=False):
     """Typed Torch function decorator.
 
@@ -17,8 +18,11 @@ def typed_torch_function(device, *types, via_np=False):
         if len(types) != len(args):
             while hasattr(wrapped, "__wrapped__"):
                 wrapped = wrapped.__wrapped__
-            raise AssertionError("The typed_torch_function decorator for {} expected {} arguments, but got {}".format(
-                wrapped, len(types), len(args)))
+            raise AssertionError(
+                "The typed_torch_function decorator for {} expected {} arguments, but got {}".format(
+                    wrapped, len(types), len(args)
+                )
+            )
 
     def structural_map(value):
         if isinstance(value, torch.Tensor):
@@ -37,9 +41,17 @@ def typed_torch_function(device, *types, via_np=False):
 
         def __call__(self, *args, **kwargs):
             check_typed_torch_function(self.__wrapped__, args)
-            return structural_map(self.__wrapped__(
-                *[torch.as_tensor(np.asarray(arg) if via_np else arg, dtype=typ, device=device)
-                  for arg, typ in zip(args, types)], **kwargs))
+            return structural_map(
+                self.__wrapped__(
+                    *[
+                        torch.as_tensor(
+                            np.asarray(arg) if via_np else arg, dtype=typ, device=device
+                        )
+                        for arg, typ in zip(args, types)
+                    ],
+                    **kwargs
+                )
+            )
 
         def __get__(self, instance, cls):
             return TypedTorchFunctionWrapper(self.__wrapped__.__get__(instance, cls))
@@ -51,9 +63,18 @@ def torch_init_with_xavier_and_zeros(module):
     """Initialize weights of a PyTorch module with Xavier and zeros initializers."""
     import torch
 
-    if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d,
-                           torch.nn.ConvTranspose1d, torch.nn.ConvTranspose2d, torch.nn.ConvTranspose3d)):
+    if isinstance(
+        module,
+        (
+            torch.nn.Linear,
+            torch.nn.Conv1d,
+            torch.nn.Conv2d,
+            torch.nn.Conv3d,
+            torch.nn.ConvTranspose1d,
+            torch.nn.ConvTranspose2d,
+            torch.nn.ConvTranspose3d,
+        ),
+    ):
         torch.nn.init.xavier_uniform_(module.weight)
         if module.bias is not None:
             torch.nn.init.zeros_(module.bias)
-
