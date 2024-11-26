@@ -1,18 +1,6 @@
 import torch
 from deepercube.utils import wrappers
-
-
-def res_block():
-    return torch.nn.Sequential(
-        torch.nn.Linear(1000, 1000, bias=False),
-        torch.nn.BatchNorm1d(1000),
-        torch.nn.ReLU(),
-        torch.nn.Linear(1000, 1000),
-        torch.nn.BatchNorm1d(1000),
-    )
-
-
-# https://github.com/forestagostinelli/DeepCubeA/blob/master/utils/pytorch_models.py
+from deepercube.agents.nn.noisy_linear import NoisyLinear
 
 
 class OneHot(torch.nn.Module):
@@ -23,23 +11,57 @@ class OneHot(torch.nn.Module):
         return torch.nn.functional.one_hot(x, self.num_classes)
 
 
-class Network(torch.nn.Module):
-    def __init__(self, in_bound: int, in_size: int, out_size: int) -> None:
+class DeepCubeACore(torch.nn.Module):
+    """
+    DeepCubeA network architecture without the output layer.
+
+    Agostinelli, F., McAleer, S., Shmakov, A., & Baldi, P. (2019). Solving the Rubik’s cube with deep reinforcement learning and search. Nature Machine Intelligence, 1(8), 356–363.
+
+    Params:
+        `in_features`: number of input features
+        `noisy`: if True, NoisyLinear layers will be used instad of Linear
+
+    Returns:
+        DeepCubeA with `in_features` inputs and 1000 outputs.
+        User should add custom last layer on top of this core model.
+
+    Examples:
+        ```python
+        model = torch.nn.Sequential(
+            OneHot(6),
+            DeepCubeACore(6*54, noisy=False),
+            torch.nn.Linear(1000, 6)
+        )
+        ```
+    """
+
+    def __init__(self, in_features: int, noisy: bool = False) -> None:
+
+        def res_block():
+            nonlocal Linear
+            return torch.nn.Sequential(
+                Linear(1000, 1000, bias=False),
+                torch.nn.BatchNorm1d(1000),
+                torch.nn.ReLU(),
+                Linear(1000, 1000),
+                torch.nn.BatchNorm1d(1000),
+            )
+
         super().__init__()
-        self.one_hot = OneHot(in_bound)
+        Linear = NoisyLinear if noisy else torch.nn.Linear
 
         self.relu = torch.nn.ReLU()
 
-        self.l1 = torch.nn.Linear(in_size, 5000, bias=False)
+        self.l1 = Linear(in_features, 5000, bias=False)
         self.bn1 = torch.nn.BatchNorm1d(5000)
 
-        self.l2 = torch.nn.Linear(5000, 1000, bias=False)
+        self.l2 = Linear(5000, 1000, bias=False)
         self.bn2 = torch.nn.BatchNorm1d(1000)
 
         self.res_blocks = torch.nn.ParameterList([res_block() for _ in range(4)])
 
-        self.out = torch.nn.Linear(1000, out_size)
-        self.apply(wrappers.torch_init_with_xavier_and_zeros)
+        if not noisy:
+            self.apply(wrappers.torch_init_with_xavier_and_zeros)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.one_hot(x).type(torch.float32)
@@ -57,5 +79,4 @@ class Network(torch.nn.Module):
             hidden = res + skip
             hidden = self.relu(hidden)
 
-        out = self.out(hidden)
-        return out
+        return hidden
