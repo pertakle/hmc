@@ -2,14 +2,32 @@ import numpy as np
 
 
 class ReplayBuffer:
-    def __init__(self, size: int, state_shape: tuple[int, ...], dtype=None) -> None:
+    def __init__(
+        self, size: int, state_shape: tuple[int, ...], state_dtype=None
+    ) -> None:
         self.size = size
         self.next_index = 0
         self.filled = False
-        self.states = np.empty([size, *state_shape], dtype=dtype)
+        self.states = np.empty([size, *state_shape], dtype=state_dtype)
         self.actions = np.empty([size], dtype=int)
         self.rewards = np.empty([size], dtype=float)
-        self.next_states = np.empty([size, *state_shape], dtype=dtype)
+        self.terminated = np.empty([size], dtype=bool)
+        self.truncated = np.empty([size], dtype=bool)
+        self.next_states = np.empty([size, *state_shape], dtype=state_dtype)
+
+        self.buff_data = [
+            self.states,
+            self.actions,
+            self.rewards,
+            self.terminated,
+            self.truncated,
+            self.next_states,
+        ]
+
+    def __len__(self) -> int:
+        if self.filled:
+            return self.size
+        return self.next_index
 
     def print(self) -> None:
         print(f"{self.size=}, {self.next_index=}, {self.filled=}")
@@ -22,49 +40,55 @@ class ReplayBuffer:
         print("Rewards")
         print(self.rewards)
         print()
+        print("Terminated", self.terminated)
+        print("Truncated", self.truncated)
         print("Next states")
         print(self.next_states)
 
-    def store_replay(
-        self,
-        states: np.ndarray,
-        actions: np.ndarray,
-        rewards: np.ndarray,
-        next_states: np.ndarray,
-    ) -> None:
-
+    def _store_replay(self, replay_data: list[np.ndarray], start: int) -> None:
         # if the batch fills the buffer many times, store only the last part
-        if len(states) > self.size:
-            states = states[-self.size :]
-            actions = actions[-self.size :]
-            rewards = rewards[-self.size :]
-            next_states = next_states[-self.size :]
+        batch_size = replay_data[0].shape[0] - start
+        if batch_size > self.size:
+            start = replay_data[0].shape[0] - self.size
+            batch_size = replay_data[0].shape[0] - start
 
         # batch_size <= self.size
-        batch_size = states.shape[0]
         remaining_size = self.size - self.next_index
         clamped_batch_size = min(remaining_size, batch_size)
-        remaining_slice = slice(
-            self.next_index, self.next_index + clamped_batch_size, 1
-        )
 
-        self.states[remaining_slice] = states[:clamped_batch_size]
-        self.actions[remaining_slice] = actions[:clamped_batch_size]
-        self.rewards[remaining_slice] = rewards[:clamped_batch_size]
-        self.next_states[remaining_slice] = next_states[:clamped_batch_size]
+        for buf, data in zip(self.buff_data, replay_data):
+            buf[self.next_index : self.next_index + clamped_batch_size] = data[
+                start : start + clamped_batch_size
+            ]
 
         if self.next_index + clamped_batch_size >= self.size:
             self.filled = True
         self.next_index = (self.next_index + clamped_batch_size) % self.size
 
-        # if the batch hits the end of buffer
+        # if the batch hit the end of buffer
+        # this will be called max once, thanks to optimization at the beginning
         if clamped_batch_size < batch_size:
-            self.store_replay(
-                states[clamped_batch_size:],
-                actions[clamped_batch_size:],
-                rewards[clamped_batch_size:],
-                next_states[clamped_batch_size:],
-            )
+            self._store_replay(replay_data, start + clamped_batch_size)
+
+    def store_replay(
+        self,
+        replay_data: list[np.ndarray],
+    ) -> None:
+        """
+        Stores replay data to the buffer.
+
+        Parameters:
+            `replay_data`: list of ndarrays [states, actions, rewards, terminated, truncated, next_states]
+
+        Shapes:
+            states: (B, state_shape)
+            actions: (B,)
+            rewards: (B,)
+            terminated: (B,)
+            truncated: (B,)
+            next_states: (B, state_shape)
+        """
+        self._store_replay(replay_data, 0)
 
     def sample_transitions(
         self, num_samples: int
@@ -72,10 +96,4 @@ class ReplayBuffer:
         indices = np.random.choice(
             self.size if self.filled else self.next_index, num_samples
         )
-        return (
-            self.states[indices],
-            self.actions[indices],
-            self.rewards[indices],
-            self.next_states[indices],
-        )
-
+        return tuple(b[indices] for b in self.buff_data)

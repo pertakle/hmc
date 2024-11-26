@@ -5,10 +5,12 @@ from deepercube.agents.nn.noisy_linear import NoisyLinear
 
 class OneHot(torch.nn.Module):
     def __init__(self, num_classes: int) -> None:
+        super().__init__()
         self.num_classes = num_classes
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.one_hot(x, self.num_classes)
+        oh = torch.nn.functional.one_hot(x, self.num_classes)
+        return oh.reshape(x.shape[0], -1)
 
 
 class DeepCubeACore(torch.nn.Module):
@@ -64,7 +66,6 @@ class DeepCubeACore(torch.nn.Module):
             self.apply(wrappers.torch_init_with_xavier_and_zeros)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.one_hot(x).type(torch.float32)
         hidden = self.l1(x)
         hidden = self.bn1(hidden)
         hidden = self.relu(hidden)

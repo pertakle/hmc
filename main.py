@@ -1,27 +1,33 @@
-from deepercube.agents.nn.noisy_linear import NoisyLinear
+import deepercube.env
+import gymnasium as gym
+from deepercube.agents.rainbow.train_rainbow import train_rainbow
 
-
-import torch
-net = torch.nn.Sequential(NoisyLinear(2, 2), NoisyLinear(2, 1))
-data = torch.tensor([[0, 1], [1, 0]], dtype=torch.float32)
-target = torch.tensor([[1], [0]], dtype=torch.float32)
-opt = torch.optim.Adam(net.parameters())
-for _ in range(2002):
-    net.train()
-    opt.zero_grad()
-    pred = net(data)
-    l = ((pred - target)**2).mean()
-    l.backward()
-    opt.step()
-
-    net.eval()
-    pred = net(data).detach().numpy().flatten()
-    t = target.detach().numpy().flatten()
-    print(pred, t)
+venv = gym.make_vec("deepercube/RubiksCube-v0", num_envs=64, scramble_len=1, ep_limit=5)
+train_rainbow(
+    venv, batch_size=1024, update_freq=32_000, replay_buffer_size=1_000_000, eval_each=10_000
+)
 exit()
 
+from deepercube.agents.rainbow.replay_buffer import ReplayBuffer
+import numpy as np
 
-
+buff = ReplayBuffer(5, (2,), int)
+buff.print()
+for _ in range(8):
+    states = np.random.choice(10, [1, 2])
+    actions = np.random.choice(2, [1])
+    rewards = np.random.choice(2, [1])
+    terminated = np.full([1], False)
+    truncated = np.full([1], True)
+    next_states = np.random.choice(10, [1, 2])
+    replay_data = [states, actions, rewards, terminated, truncated, next_states]
+    print(f"adding {replay_data}")
+    buff.store_replay(replay_data)
+    buff.print()
+    input()
+print("sampled")
+print(buff.sample_transitions(10))
+exit()
 
 
 from deepercube.env.cube_env import RubiksCubeEnvVec
