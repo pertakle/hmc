@@ -2,9 +2,11 @@ import deepercube.env
 import gymnasium as gym
 from deepercube.agents.rainbow.train_rainbow import train_rainbow
 
-venv = gym.make_vec("deepercube/RubiksCube-v0", num_envs=64, scramble_len=1, ep_limit=5)
+venv = gym.make_vec(
+    "deepercube/RubiksCube-v0", num_envs=128, scramble_len=5, ep_limit=14
+)
 train_rainbow(
-    venv, batch_size=1024, update_freq=32_000, replay_buffer_size=1_000_000, eval_each=10_000
+    venv, batch_size=128, update_freq=500, replay_buffer_size=100_000, eval_each=500
 )
 exit()
 

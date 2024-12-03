@@ -30,10 +30,13 @@ class Rainbow:
     def __init__(self, obs_bound: int, obs_size: int, actions: int) -> None:
         super().__init__()
         self.netowrk = RainbowNetwork(obs_bound, obs_size, actions).to(self.device)
-        self.target_network = copy.deepcopy(self.netowrk).to(self.device)
+        # self.target_network = copy.deepcopy(self.netowrk).to(self.device)
+        self.target_network = RainbowNetwork(obs_bound, obs_size, actions).to(
+            self.device
+        )
 
-        self.opt = torch.optim.Adam(self.netowrk.parameters(), lr=0.000_0625)
-        self.loss = torch.nn.MSELoss()
+        self.opt = torch.optim.Adam(self.netowrk.parameters(), lr=0.001)
+        self.loss = torch.nn.MSELoss(reduction="none")
 
         self.copy_each = 100
         self.gamma = 1
@@ -56,6 +59,7 @@ class Rainbow:
         torch.bool,
         torch.bool,
         torch.int64,
+        torch.float32,
     )
     def train(
         self,
@@ -65,7 +69,8 @@ class Rainbow:
         terminated: torch.Tensor,
         truncated: torch.Tensor,
         next_states: torch.Tensor,
-    ) -> None:
+        isw: torch.Tensor
+    ) -> torch.Tensor:
         self.netowrk.train()
         self.target_network.train()
 
@@ -84,10 +89,13 @@ class Rainbow:
         self.opt.zero_grad()
         predicted_q_values = self.netowrk(states)
         predicted_returns = predicted_q_values[torch.arange(len(states)), actions]
-        loss = self.loss(predicted_returns, returns)
+        loss = self.loss(predicted_returns, returns).squeeze() @ isw.squeeze()
 
         loss.backward()
         self.opt.step()
+
+        td_error = torch.abs(returns - predicted_returns)
+        return td_error
 
     def copy_weights(self) -> None:
         self.netowrk.load_state_dict(self.target_network.state_dict())

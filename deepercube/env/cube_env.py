@@ -115,12 +115,12 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
 
         self.single_action_space = gym.spaces.Discrete(self._actions)
         self.single_observation_space = gym.spaces.MultiDiscrete(
-            np.full(2*self._cube_features, self._colors)
+            np.full(2 * self._cube_features, self._colors)
         )
 
         self.action_space = gym.spaces.MultiDiscrete(np.full(num_envs, self._actions))
         self.observation_space = gym.spaces.MultiDiscrete(
-            np.full([num_envs, 2*self._cube_features], self._colors)
+            np.full([num_envs, 2 * self._cube_features], self._colors)
         )
 
     def _get_observation(self) -> npt.NDArray:
@@ -216,7 +216,7 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
 
         rewards = -np.ones(self.num_envs)
         terminated = self._is_solved()
-        truncated = self._made_steps >= self._ep_limit
+        truncated = self._made_steps >= self._ep_limit - 1
 
         self._auto_reseting = np.logical_or(terminated, truncated)
 

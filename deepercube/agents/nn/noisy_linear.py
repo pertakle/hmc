@@ -104,8 +104,8 @@ class NoisyLinear(torch.nn.Module):
             self.sigma_b.data.fill_(sigma_val)
 
     def _get_noise(self, size: int) -> torch.Tensor:
-        noise = torch.randn(size, device=self.device)
-        return torch.sign(noise) * torch.sqrt(torch.abs(noise))
+        noise = torch.randn(size, device=self.mu_w.device)
+        return torch.sign(noise).mul_(torch.sqrt(torch.abs(noise)))
 
     def reset_noise(self) -> None:
         noise_in = self._get_noise(self.in_features)

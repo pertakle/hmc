@@ -2,6 +2,8 @@ import torch
 from deepercube.utils import wrappers
 from deepercube.agents.nn.noisy_linear import NoisyLinear
 
+# from deepercube.agents.nn.noisy_linear_torchrl import NoisyLinear
+
 
 class OneHot(torch.nn.Module):
     def __init__(self, num_classes: int) -> None:
