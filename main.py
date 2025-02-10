@@ -1,58 +1,42 @@
-import deepercube.env
-import gymnasium as gym
 from deepercube.agents.rainbow.train_rainbow import train_rainbow
+import deepercube.env
+import argparse
 
-venv = gym.make_vec(
-    "deepercube/RubiksCube-v0", num_envs=128, scramble_len=5, ep_limit=14
-)
-train_rainbow(
-    venv, batch_size=128, update_freq=500, replay_buffer_size=100_000, eval_each=500
-)
-exit()
+parser = argparse.ArgumentParser()
 
-from deepercube.agents.rainbow.replay_buffer import ReplayBuffer
-import numpy as np
+parser.add_argument("--beam_size", type=int, default=2, help="size of beam for beam search")
+parser.add_argument("--num_envs", type=int, default=256, help="number of parallel envs")
+parser.add_argument("--scramble_len", type=int, default=3, help="length of puzzle scramble")
+parser.add_argument("--ep_limit", type=int, default=4, help="maximum length of an episode")
+parser.add_argument("--max_steps", type=int, default=40_000, help="max number of train steps")
 
-buff = ReplayBuffer(5, (2,), int)
-buff.print()
-for _ in range(8):
-    states = np.random.choice(10, [1, 2])
-    actions = np.random.choice(2, [1])
-    rewards = np.random.choice(2, [1])
-    terminated = np.full([1], False)
-    truncated = np.full([1], True)
-    next_states = np.random.choice(10, [1, 2])
-    replay_data = [states, actions, rewards, terminated, truncated, next_states]
-    print(f"adding {replay_data}")
-    buff.store_replay(replay_data)
-    buff.print()
-    input()
-print("sampled")
-print(buff.sample_transitions(10))
-exit()
+parser.add_argument("--eval_each", type=int, default=100, help="eval after each n steps")
+parser.add_argument("--eval_num_envs", type=int, default=128, help="number of eval envs")
+parser.add_argument("--eval_scramble_len", type=int, default=3, help="length of eval puzzle scramble")
+parser.add_argument("--eval_ep_limit", type=int, default=9, help="maximum length of an eval episode")
 
 
-from deepercube.env.cube_env import RubiksCubeEnvVec
-import gymnasium as gym
-import deepercube.kostka.kostka_vek as kv
-import numpy as np
+parser.add_argument("--hidden_size", type=int, default=1024, help="size of hidden layer")
+parser.add_argument("--learning_rate", type=float, default=0.00005, help="learning rate")
+parser.add_argument("--batch_size", type=int, default=64, help="batch_size")
+parser.add_argument("--replay_buffer_size", type=int, default=120_000, help="size of replay buffer")
+parser.add_argument("--replay_start_size", type=int, default=10_000, help="min RB to train from")
+parser.add_argument("--target_update_each", type=int, default=1, help="frequency of target update")
+
+parser.add_argument("--alpha", type=float, default=0.6, help="alpha for PER")
+parser.add_argument("--beta", type=float, default=0.4, help="beta for PER")
+parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
+parser.add_argument("--tau", type=float, default=0.001, help="smooth target update coef")
+
+parser.add_argument("--n_step", type=int, default=1, help="n-step return")
+parser.add_argument("--atoms", type=int, default=100, help="number of atoms for dist. dqn")
+parser.add_argument("--v_min", type=float, default=-100.0, help="min atom value")
+parser.add_argument("--v_max", type=float, default=-1.0, help="max atom value")
+
+parser.add_argument("--her_future", type=int, default=0, help="number of future HER episodes")
+parser.add_argument("--her_final", type=int, default=1, help="number of final HER episodes")
 
 
-def print_state(state):
-    kv.print_kostku_vek(state.reshape(-1, 6, 3, 3))
-
-
-env = gym.wrappers.Autoreset(
-    gym.make("deepercube/RubiksCube-v0", scramble_len=1, ep_limit=1)
-)
-env = gym.make_vec("deepercube/RubiksCube-v0", num_envs=2, scramble_len=1, ep_limit=2)
-
-state = env.reset()[0]
-terminated, truncated = False, False
-while True:
-    print_state(state)
-    action = np.array(input(f"{env.num_envs} actions: ").split(), dtype=int)
-    next_state, reward, terminated, truncated, info = env.step(action)
-    print(f"{terminated=}")
-    print(f"{truncated=}")
-    state = next_state
+if __name__ == "__main__":
+    args = parser.parse_args()
+    train_rainbow(args)

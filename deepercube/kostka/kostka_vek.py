@@ -12,6 +12,8 @@ def nova_kostka_vek(n: int) -> KostkaVek:
 
 
 def je_stejna(kostka1: KostkaVek, kostka2: KostkaVek | ko.Kostka) -> np.ndarray:
+    if len(kostka2.shape) + 1 == len(kostka1.shape):
+        kostka2 = kostka2[None]
     return np.all(kostka1 == kostka2, axis=(1, 2, 3))
 
 

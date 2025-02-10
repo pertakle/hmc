@@ -199,6 +199,7 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
             self._goals, self._scramble_len
         )  # TODO: vyuzit self.random...
         self._made_steps *= 0
+        self._auto_reseting &= False
 
         obs = self._get_observation()
         info = self._get_info()
@@ -216,7 +217,7 @@ class RubiksCubeEnvVec(gym.vector.VectorEnv):
 
         rewards = -np.ones(self.num_envs)
         terminated = self._is_solved()
-        truncated = self._made_steps >= self._ep_limit - 1
+        truncated = self._made_steps >= self._ep_limit# - 1
 
         self._auto_reseting = np.logical_or(terminated, truncated)
 

@@ -2,22 +2,55 @@ from ..nn.network import DeepCubeACore, OneHot
 from ..nn.noisy_linear import NoisyLinear
 from deepercube.utils import wrappers
 import numpy as np
-import copy
 import torch
+import argparse
 
 
-class RainbowNetwork(torch.nn.Module):
-    def __init__(self, obs_bound: int, obs_size: int, actions: int) -> None:
+class Reshape(torch.nn.Module):
+    def __init__(self, shape: tuple[int, ...]) -> None:
         super().__init__()
-        self.one_hot = OneHot(obs_bound)
-        self.dca = DeepCubeACore(obs_size * obs_bound, True)
-        self.output = NoisyLinear(1000, actions)
+        self.shape = shape
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        hidden = self.one_hot(x).type(torch.float32)
-        hidden = self.dca(hidden)
-        output = self.output(hidden)
-        return output
+        return x.view(self.shape)
+
+class DuelingDQN(torch.nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_size, atoms):
+        super(DuelingDQN, self).__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.atoms = atoms
+
+        # Advantage stream
+        self.advantage = torch.nn.Sequential(
+            NoisyLinear(input_dim, hidden_size),
+            torch.nn.ReLU(),
+            NoisyLinear(hidden_size, self.output_dim * self.atoms),
+        )
+
+        # Value stream
+        self.value = torch.nn.Sequential(
+            NoisyLinear(input_dim, hidden_size),
+            torch.nn.ReLU(),
+            NoisyLinear(hidden_size, self.atoms),
+        )
+
+    def forward(self, x):
+        #x = self.features(x)
+        #x = x.view(x.size(0), -1)
+
+        advantage = self.advantage(x)
+        value = self.value(x)
+
+        # Combine value and advantage streams
+        value = value[:, None]  # [B, None, atom]
+        advantage = advantage.view(
+            -1, self.output_dim, self.atoms
+        )  # [B, actions, atom]
+
+        logits = value + (advantage - advantage.mean(dim=1, keepdim=True))
+
+        return logits
 
 
 class Rainbow:
@@ -27,75 +60,79 @@ class Rainbow:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def __init__(self, obs_bound: int, obs_size: int, actions: int) -> None:
+    def __init__(
+        self, args: argparse.Namespace, obs_bound: int, obs_size: int, actions: int
+    ) -> None:
         super().__init__()
-        self.netowrk = RainbowNetwork(obs_bound, obs_size, actions).to(self.device)
-        # self.target_network = copy.deepcopy(self.netowrk).to(self.device)
-        self.target_network = RainbowNetwork(obs_bound, obs_size, actions).to(
-            self.device
-        )
 
-        self.opt = torch.optim.Adam(self.netowrk.parameters(), lr=0.001)
-        self.loss = torch.nn.MSELoss(reduction="none")
+        self.hidden_size = args.hidden_size
+        self.num_actions = actions
+        self.num_atoms = args.atoms
+        self.atoms_np, self.atom_delta = np.linspace(args.v_min, args.v_max, args.atoms, retstep=True)
+        self.atoms_torch = torch.tensor(self.atoms_np, device=Rainbow.device)
 
-        self.copy_each = 100
-        self.gamma = 1
+        self.network = torch.nn.Sequential(
+            OneHot(obs_bound),
+            DeepCubeACore(obs_size * obs_bound, True),
+            DuelingDQN(1000, actions, self.hidden_size, self.num_atoms),
+
+            #NoisyLinear(obs_size * obs_bound, 1000),
+            #NoisyLinear(1000, actions * self.num_atoms),
+            Reshape((-1, actions, self.num_atoms))
+        ).to(Rainbow.device)
+
+        self.opt = torch.optim.Adam(self.network.parameters(), lr=args.learning_rate)
+        self.loss = torch.nn.KLDivLoss(reduction="none")
+
+    def probs_to_expected(self, probs: np.ndarray) -> np.ndarray:
+        return (probs * self.atoms_np[None, None]).sum(2)
 
     @wrappers.typed_torch_function(device, torch.int64, bool)
-    def predict_moves(self, states: torch.Tensor, greedy: bool) -> torch.Tensor:
+    def predict_probs(self, states: torch.Tensor, greedy: bool) -> torch.Tensor:
         if greedy:
-            self.netowrk.eval()
+            self.network.eval()
         else:
-            self.netowrk.train()
+            self.network.train()
         with torch.no_grad():
-            q_values = self.netowrk(states)
-        return torch.argmax(q_values, -1)
+            return self.network(states).softmax(2)
+
+    def predict_q_values(self, states: np.ndarray, greedy: bool) -> np.ndarray:
+        probs: np.ndarray = self.predict_probs(states, greedy)  # type: ignore
+        return self.probs_to_expected(probs)
 
     @wrappers.typed_torch_function(
         device,
         torch.int64,
         torch.int32,
         torch.float32,
-        torch.bool,
-        torch.bool,
-        torch.int64,
         torch.float32,
     )
     def train(
         self,
         states: torch.Tensor,
         actions: torch.Tensor,
-        rewards: torch.Tensor,
-        terminated: torch.Tensor,
-        truncated: torch.Tensor,
-        next_states: torch.Tensor,
-        isw: torch.Tensor
+        target: torch.Tensor,
+        isw: torch.Tensor,
     ) -> torch.Tensor:
-        self.netowrk.train()
-        self.target_network.train()
+        self.network.train()
+        predictions = self.network(states)
+        #predictions = predictions.view(-1, self.num_actions, self.num_atoms)
+        predictions = predictions[torch.arange(len(predictions)), actions]
+        predictions = predictions.log_softmax(-1)
 
-        with torch.no_grad():
-            q_values_target: torch.Tensor = self.target_network(next_states)
-            q_values = self.netowrk(next_states)
-        next_actions = torch.argmax(q_values, dim=1)
-
-        returns = (
-            rewards
-            + (~terminated)
-            * self.gamma
-            * q_values_target[torch.arange(len(q_values_target)), next_actions]
-        )
-
+        loss = self.loss(predictions, target)
         self.opt.zero_grad()
-        predicted_q_values = self.netowrk(states)
-        predicted_returns = predicted_q_values[torch.arange(len(states)), actions]
-        loss = self.loss(predicted_returns, returns).squeeze() @ isw.squeeze()
+        loss = loss.sum(1)
+        loss_reduced = loss @ isw
+        loss_reduced.backward()
+        with torch.no_grad():
+            self.opt.step()
+        return loss
 
-        loss.backward()
-        self.opt.step()
-
-        td_error = torch.abs(returns - predicted_returns)
-        return td_error
-
-    def copy_weights(self) -> None:
-        self.netowrk.load_state_dict(self.target_network.state_dict())
+    def copy_weights_from(self, other: "Rainbow", tau: float) -> None:
+        # self._model.load_state_dict(other._model.state_dict())
+        for target_param, param in zip(
+            self.network.parameters(), other.network.parameters()
+        ):
+            target_param.data.mul_(1 - tau)
+            target_param.data.add_(tau * param.data)

@@ -12,8 +12,15 @@ class OneHot(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         oh = torch.nn.functional.one_hot(x, self.num_classes)
-        return oh.reshape(x.shape[0], -1)
+        return oh.reshape(x.shape[0], -1).type(torch.float32)
 
+
+class Identity(torch.nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
 
 class DeepCubeACore(torch.nn.Module):
     """
@@ -43,24 +50,26 @@ class DeepCubeACore(torch.nn.Module):
 
         def res_block():
             nonlocal Linear
+            nonlocal Norm
             return torch.nn.Sequential(
                 Linear(1000, 1000, bias=False),
-                torch.nn.BatchNorm1d(1000),
+                Norm(1000),#torch.nn.LayerNorm(1000),#BatchNorm1d(1000),
                 torch.nn.ReLU(),
                 Linear(1000, 1000),
-                torch.nn.BatchNorm1d(1000),
+                Norm(1000)#torch.nn.LayerNorm(1000),#BatchNorm1d(1000),
             )
 
         super().__init__()
         Linear = NoisyLinear if noisy else torch.nn.Linear
+        Norm = Identity #torch.nn.LayerNorm#torch.nn.BatchNorm1d
 
         self.relu = torch.nn.ReLU()
 
         self.l1 = Linear(in_features, 5000, bias=False)
-        self.bn1 = torch.nn.BatchNorm1d(5000)
+        self.bn1 = Norm(5000)#torch.nn.LayerNorm(5000)#BatchNorm1d(5000)
 
         self.l2 = Linear(5000, 1000, bias=False)
-        self.bn2 = torch.nn.BatchNorm1d(1000)
+        self.bn2 = Norm(1000)#torch.nn.LayerNorm(1000)#BatchNorm1d(1000)
 
         self.res_blocks = torch.nn.ParameterList([res_block() for _ in range(4)])
 

@@ -113,3 +113,4 @@ class NoisyLinear(torch.nn.Module):
         self.epsilon_w.copy_(torch.outer(noise_out, noise_in))
         if self.has_bias:
             self.epsilon_b.copy_(noise_out)
+
