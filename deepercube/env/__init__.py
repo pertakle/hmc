@@ -15,3 +15,9 @@ register(
     vector_entry_point="deepercube.env.cube_env:RubiksCubeEnvVec",
     disable_env_checker=False,
 )
+register(
+    id="deepercube/TorchRubiksCube-v0",
+    entry_point="deepercube.env.torch_cube_env:TorchRubiksCubeEnv",
+    vector_entry_point="deepercube.env.torch_cube_env:TorchRubiksCubeEnvVec",
+    disable_env_checker=False,
+)

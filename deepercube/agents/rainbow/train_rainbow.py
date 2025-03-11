@@ -3,7 +3,7 @@ import numpy as np
 import gymnasium as gym
 import deepercube.kostka.kostka as ko
 from .rainbow import Rainbow
-from . import her, buffers
+from ..rl_utils import her, buffers
 import argparse
 import deepercube.utils.solver as sol
 

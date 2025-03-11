@@ -63,7 +63,7 @@ def tahni_tahy(kostka: Kostka, tahy: Iterable[int]) -> None:
 
 def vygeneruj_nahodny_tah(shape=None) -> int | np.ndarray:
     if shape is None:
-        return np.random.randint(1, 6) * np.random.choice([-1, 1])
+        return int(np.random.randint(1, 6) * np.random.choice([-1, 1]))
     return np.random.randint(1, 6, shape) * np.random.choice([-1, 1], shape)
 
 

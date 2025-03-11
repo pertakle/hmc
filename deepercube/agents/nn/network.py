@@ -22,6 +22,7 @@ class Identity(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
 
+
 class DeepCubeACore(torch.nn.Module):
     """
     DeepCubeA network architecture without the output layer.
@@ -31,7 +32,10 @@ class DeepCubeACore(torch.nn.Module):
     Params:
         `in_features`: number of input features
         `noisy`: if True, NoisyLinear layers will be used instad of Linear
-
+        `norm`:
+            - None: no normalization
+            - "layer": LayerNorm
+            - "batch": BatchNorm
     Returns:
         DeepCubeA with `in_features` inputs and 1000 outputs.
         User should add custom last layer on top of this core model.
@@ -46,30 +50,38 @@ class DeepCubeACore(torch.nn.Module):
         ```
     """
 
-    def __init__(self, in_features: int, noisy: bool = False) -> None:
+    def __init__(self, in_features: int, noisy: bool = False, norm: str|None = None) -> None:
 
         def res_block():
             nonlocal Linear
             nonlocal Norm
             return torch.nn.Sequential(
                 Linear(1000, 1000, bias=False),
-                Norm(1000),#torch.nn.LayerNorm(1000),#BatchNorm1d(1000),
+                Norm(1000),
                 torch.nn.ReLU(),
                 Linear(1000, 1000),
-                Norm(1000)#torch.nn.LayerNorm(1000),#BatchNorm1d(1000),
+                Norm(1000),
             )
 
         super().__init__()
         Linear = NoisyLinear if noisy else torch.nn.Linear
-        Norm = Identity #torch.nn.LayerNorm#torch.nn.BatchNorm1d
+
+        Norm = Identity
+        if norm is not None:
+            if norm == "layer":
+                Norm = torch.nn.LayerNorm
+            elif norm == "barch":
+                torch.nn.BatchNorm1d
+            else:
+                assert False, "Unknown type of normalization!"
 
         self.relu = torch.nn.ReLU()
 
         self.l1 = Linear(in_features, 5000, bias=False)
-        self.bn1 = Norm(5000)#torch.nn.LayerNorm(5000)#BatchNorm1d(5000)
+        self.bn1 = Norm(5000)
 
         self.l2 = Linear(5000, 1000, bias=False)
-        self.bn2 = Norm(1000)#torch.nn.LayerNorm(1000)#BatchNorm1d(1000)
+        self.bn2 = Norm(1000)
 
         self.res_blocks = torch.nn.ParameterList([res_block() for _ in range(4)])
 
