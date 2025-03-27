@@ -1,7 +1,8 @@
 import torch
-from deepercube.agents.nn.network import OneHot, DeepCubeACore
+from deepercube.agents.nn.network import ResMLP
 import argparse
-
+import deepercube.kostka.torch_cube_vec as tcv
+from deepercube.utils.wrappers import torch_init_with_orthogonal_and_zeros
 
 class PQN:
     def __init__(
@@ -16,11 +17,10 @@ class PQN:
 
         self.actions = actions
         self.clip_grad_norm = args.clip_grad_norm
-        self.model = torch.nn.Sequential(
-            OneHot(obs_bound),
-            DeepCubeACore(obs_size * obs_bound, False, "layer"),
-            torch.nn.Linear(1000, actions),
-        ).to(self.device)
+        self.model = ResMLP(
+            obs_size, obs_bound, 1024, 1024, 1, actions,
+            noisy=True, norm="layer", norm_last_only=True
+        ).apply(torch_init_with_orthogonal_and_zeros).to(self.device)
 
         self.opt = torch.optim.Adam(self.model.parameters(), args.learning_rate)
         self.loss = torch.nn.MSELoss()
@@ -35,9 +35,23 @@ class PQN:
         )
         return noise * random_actions + ~noise * self.predict_q(states).argmax(-1)
 
+    def _successors(self, stategoals: torch.Tensor) -> torch.Tensor:
+        B = stategoals.shape[0]
+        F = stategoals.shape[1] // 2
+        states = stategoals[:, :F]
+        goals = stategoals[:, F:]
+
+        successors = tcv.make_all_moves_vec(states.reshape(B, 6, 3, 3)).reshape(B, -1, 6, 3, 3)
+        ssg = torch.concat((successors, goals[:, None]), dim=1)
+        return ssg
+
     def predict_q(self, states: torch.Tensor) -> torch.Tensor:
         self.model.eval()
         with torch.no_grad():
+            # B = states.shape[0]
+            # FF = states.shape[1]
+            # succ = self._successors(states).reshape(-1, FF)
+            # return self.model(succ).reshape(B, -1, FF)
             return self.model(states)
 
     def train(

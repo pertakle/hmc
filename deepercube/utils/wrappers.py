@@ -1,4 +1,5 @@
 import numpy as np
+from deepercube.agents.nn.noisy_linear import NoisyLinear
 
 
 def typed_torch_function(device, *types, via_np=False):
@@ -59,6 +60,27 @@ def typed_torch_function(device, *types, via_np=False):
     return TypedTorchFunctionWrapper
 
 
+def torch_init_with_orthogonal_and_zeros(module):
+    """Initialize weights of a PyTorch module with Xavier and zeros initializers."""
+    import torch
+
+    if isinstance(
+        module,
+        (
+            NoisyLinear,
+            torch.nn.Linear,
+            torch.nn.Conv1d,
+            torch.nn.Conv2d,
+            torch.nn.Conv3d,
+            torch.nn.ConvTranspose1d,
+            torch.nn.ConvTranspose2d,
+            torch.nn.ConvTranspose3d,
+        ),
+    ):
+        torch.nn.init.orthogonal_(module.weight)
+        if module.bias is not None:
+            torch.nn.init.zeros_(module.bias)
+
 def torch_init_with_xavier_and_zeros(module):
     """Initialize weights of a PyTorch module with Xavier and zeros initializers."""
     import torch
@@ -66,6 +88,7 @@ def torch_init_with_xavier_and_zeros(module):
     if isinstance(
         module,
         (
+            NoisyLinear,
             torch.nn.Linear,
             torch.nn.Conv1d,
             torch.nn.Conv2d,

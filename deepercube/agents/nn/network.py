@@ -2,8 +2,6 @@ import torch
 from deepercube.utils import wrappers
 from deepercube.agents.nn.noisy_linear import NoisyLinear
 
-# from deepercube.agents.nn.noisy_linear_torchrl import NoisyLinear
-
 
 class OneHot(torch.nn.Module):
     def __init__(self, num_classes: int) -> None:
@@ -21,6 +19,81 @@ class Identity(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
+
+class ResMLP(torch.nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        in_classes: int,
+        n1: int,
+        n2: int,
+        nr: int,
+        out_features: int,
+        noisy: bool,
+        norm: str | None = None,
+        norm_last_only: bool = True
+    ) -> None:
+        super().__init__()
+
+        Linear = NoisyLinear if noisy else torch.nn.Linear
+
+        NormLast = Identity
+        if norm is not None:
+            if norm == "layer":
+                NormLast = torch.nn.LayerNorm
+            elif norm == "barch":
+                NormLast = torch.nn.BatchNorm1d
+            else:
+                assert False, "Unknown type of normalization!"
+        Norm = Identity if norm_last_only else NormLast
+
+        assert n1 > 0, "Too much work to handle."
+        assert n2 > 0, "Too much work to handle."
+
+        self.one_hot = OneHot(in_classes)
+
+        self.l1 = torch.nn.Sequential(
+            Linear(in_features, n1),
+            Norm(n1),
+            torch.nn.ReLU()
+        )
+        self.l2 = torch.nn.Sequential(
+            Linear(n1, n2),
+            Norm(n2),
+            torch.nn.ReLU()
+        )
+        self.res_blocks = torch.nn.ParameterList()
+        for i in range(nr):
+            self.res_blocks.append(
+                torch.nn.Sequential(
+                    Linear(n2, n2),
+                    Norm(n2),
+                    torch.nn.ReLU(),
+                    Linear(n2, n2),
+                    NormLast(n2) if i == nr - 1 else Norm(n2)
+                )
+            )
+
+        self.out = Linear(n2, out_features)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        hidden = self.one_hot(x)
+        hidden = self.l1(hidden)
+        hidden = self.l2(hidden)
+
+        for block in self.res_blocks:
+            skip = hidden
+            hidden = block(hidden)
+            hidden = hidden + skip
+            hidden = torch.nn.ReLU(hidden)
+
+        out = self.out(hidden)
+        return out
+
+
+
+
+
 
 
 class DeepCubeACore(torch.nn.Module):
@@ -78,10 +151,10 @@ class DeepCubeACore(torch.nn.Module):
         self.relu = torch.nn.ReLU()
 
         self.l1 = Linear(in_features, 5000, bias=False)
-        self.bn1 = Norm(5000)
+        self.norm1 = Norm(5000)
 
         self.l2 = Linear(5000, 1000, bias=False)
-        self.bn2 = Norm(1000)
+        self.norm2 = Norm(1000)
 
         self.res_blocks = torch.nn.ParameterList([res_block() for _ in range(4)])
 
@@ -90,11 +163,11 @@ class DeepCubeACore(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         hidden = self.l1(x)
-        hidden = self.bn1(hidden)
+        hidden = self.norm1(hidden)
         hidden = self.relu(hidden)
 
         hidden = self.l2(hidden)
-        hidden = self.bn2(hidden)
+        hidden = self.norm2(hidden)
         hidden = self.relu(hidden)
 
         for res_block in self.res_blocks:

@@ -75,6 +75,14 @@ class NoisyLinear(torch.nn.Module):
         self.reset_parameters()
         self.reset_noise()
 
+    @property
+    def weight(self) -> torch.Tensor:
+        return self.mu_w
+
+    @property
+    def bias(self) -> torch.Tensor | None:
+        return self.mu_b
+
     def _get_weights(self) -> torch.Tensor:
         weights = self.mu_w
         if self.training:
@@ -113,4 +121,5 @@ class NoisyLinear(torch.nn.Module):
         self.epsilon_w.copy_(torch.outer(noise_out, noise_in))
         if self.has_bias:
             self.epsilon_b.copy_(noise_out)
+
 

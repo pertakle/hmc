@@ -4,6 +4,41 @@ import numpy as np
 import numpy.typing as npt
 import deepercube.kostka.kostka_vek as kv
 import deepercube.kostka.kostka as ko
+import base_env
+
+class RubiksCubeEnv2(base_env.BaseNumpyEnv):
+    def __init__(self, scramble_len: int, ep_limit: int) -> None:
+        super().__init__(scramble_len, ep_limit)
+
+    def _new_solved_state(self) -> ko.Kostka:
+        return ko.nova_kostka()
+
+    def _scramble(self, state: npt.NDArray) -> None:
+        ko.zamichej(state, self._scramble_len)
+
+    def _is_solved(self) -> bool:
+        return ko.je_stejna(self._state, self._goal)
+
+    def _action_to_move(self, action: int) -> int:
+        """
+        Converts `action` (0..11) to move (-6..1,1..6).
+        """
+        minus_move = int(action > 5)
+        move = action + 1
+        move -= 2 * action * minus_move
+        move += 4 * minus_move
+        return move
+
+    def _perform_action(self, action: int) -> None:
+        move = self._action_to_move(action)
+        ko.tahni_tah(self._state, move)
+
+    def print(self) -> None:
+        print("State:")
+        ko.print_kostku(self._state)
+        print()
+        print("Goal:")
+        ko.print_kostku(self._goal)
 
 
 class RubiksCubeEnv(gym.Env):

@@ -44,6 +44,21 @@ parser.add_argument("--her_final", type=int, default=1, help="number of final HE
 
 
 if __name__ == "__main__":
+    from deepercube.env.lights_out import LightsOutVec
+    import torch
+    env = LightsOutVec(3, 2, 1, 10000)
+    env.reset()
+    done = False
+    while True:
+        env.print()
+        actions = torch.as_tensor(list(map(int, input("Action: ").split(" "))), dtype=torch.long)
+        _, _, term, trun, _  = env.step(actions)
+        done = torch.any(term | trun)
+    env.print()
+    exit()
+
+
+
     args = parser.parse_args()
     train_pqn(args)
 

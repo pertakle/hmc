@@ -8,6 +8,19 @@ import deepercube.utils.torch_utils as tut
 import deepercube.agents.rl_utils.torch_buffers as tbuf
 import deepercube.agents.rl_utils.torch_her as ther
 
+def evaluate(agent: PQN, env: gym.vector.VectorEnv) -> tuple[float, float]:
+    dones = torch.full([env.num_envs], False, dtype=torch.bool, device=tut.get_torch_cube_device())
+    returns = torch.zeros(env.num_envs, dtype=torch.float32, device=tut.get_torch_cube_device())
+
+    states = env.reset()[0]
+    while not dones.all():
+        actions = agent.predict_egreedy_actions(states, 0)
+        states, rewards, terminations, truncations, _ = env.step(actions)
+
+        returns += rewards * ~dones
+        dones |= terminations | truncations
+
+    return returns.mean().item(), returns.std().item()
 
 def make_train_data(
     agent: PQN, episodes: tbuf.TorchReplayEpData, l: float, gamma: float
@@ -24,28 +37,44 @@ def make_train_data(
     """
     B = episodes.batch_size()
     T = episodes.states.shape[1]
-    next_q = agent.predict_q(episodes.next_states.reshape(B*T, -1)).reshape(B, T, -1)
+    next_q = agent.predict_q(episodes.next_states.reshape(B * T, -1)).reshape(B, T, -1)
     next_v = next_q.max(-1).values
 
     end_next_stategoals = episodes.next_states[range(B), episodes.lengths].reshape(B, 2, -1)
     end_terminated = torch.all(end_next_stategoals[:, 0] == end_next_stategoals[:, 1], dim=1)
 
     returns = torch.zeros_like(episodes.rewards)
-    for t in range(T-1, -1, -1):
+
+    # last possible transition manually
+    # must be truncated
+    returns[:, -1] = episodes.rewards[:, -1] + ~end_terminated * gamma * next_v[:, -1]
+
+    
+    for t in range(T - 2, -1, -1):
         # this transition terminated
-        terminated = (t == (episodes.lengths - 1)) & end_terminated
+        terminations = (t == (episodes.lengths - 1)) & end_terminated
+        dones = terminations | ((t + 1) == episodes.lengths)
+        truncations = dones & ~terminations
 
-        # continue: l * ret[t+1] + (1 - l) * v_next[t]
-        # term: 0
-        # trun: v_next
-        ql_next_continue = l * returns[:, t+1] + (1 - l) * next_v[:, t]
-        ql_next_term = torch.zeros_like(returns[:, t])
-        ql_next_trun = next_v[:, t]
+        # trunc: l=0
+        # else : l=lambd
+        l_truncated = l * ~truncations
+        gl_next = l_truncated * returns[:, t + 1] + (1 - l_truncated) * next_v[:, t]
+        returns[:, t] = episodes.rewards[:, t] + ~terminations * gamma * gl_next
 
-        # TODO
-        ql_next = ...
-        returns[:, t] = episodes.rewards[:, t] + gamma * ql_next
-    return ...
+    # unroll returns
+    mask = (
+        torch.arange(episodes.states.shape[1], device=tut.get_torch_cube_device())[
+            None, :
+        ]
+        < episodes.lengths[:, None]
+    )
+    returns_unrolled = returns[mask]
+    episodes_unrolled = episodes.unroll()
+    states_unrolled = episodes_unrolled.states
+    actions_unrolled = episodes_unrolled.actions
+    # TODO: refine this function
+    return states_unrolled, actions_unrolled, returns_unrolled
 
 
 def train_pqn(args: argparse.Namespace) -> PQN:
@@ -115,11 +144,15 @@ def train_pqn(args: argparse.Namespace) -> PQN:
 
             # compute target values
             train_states, train_actions, train_targets = make_train_data(
-                    agent, train_eps, args.lambd, args.gamma
-                    )
+                agent, train_eps, args.lambd, args.gamma
+            )
 
             # train step
             agent.train(train_states, train_actions, train_targets)
+
+        if step % args.eval_each == 0:
+            mean, std = evaluate(agent, eval_env)
+            print(f"Evaluation after {step} steps: {mean:.2f} +-{std:.2f}")
 
         states = next_states
 
