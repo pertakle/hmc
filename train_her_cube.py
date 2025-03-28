@@ -1,11 +1,11 @@
 import numpy as np
 import tqdm
 from typing import Any, Tuple, List
-from deepercube.nn.a2c import A2CCubeAgent
-import deepercube.kostka.kostka_vek as kv
-import deepercube.kostka.kostka as ko
-from deepercube.utils import data_gen
-from deepercube.utils import solver
+from hmc.nn.a2c import A2CCubeAgent
+import hmc.kostka.kostka_vek as kv
+import hmc.kostka.kostka as ko
+from hmc.utils import data_gen
+from hmc.utils import solver
 
 
 def evaluate(

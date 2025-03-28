@@ -1,7 +1,7 @@
-from deepercube.nn.eff_cube_agent import EffCubeAgent
+from hmc.nn.eff_cube_agent import EffCubeAgent
 import numpy as np
-import deepercube.kostka.kostka_vek as kv
-import deepercube.kostka.kostka as ko
+import hmc.kostka.kostka_vek as kv
+import hmc.kostka.kostka as ko
 import tqdm
 from typing import Any
 
