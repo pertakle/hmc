@@ -18,16 +18,21 @@ class PQN:
         self.actions = actions
         self.clip_grad_norm = args.clip_grad_norm
         self.model = ResMLP(
-            obs_size, obs_bound, 1024, 1024, 1, actions,
-            noisy=False, norm="layer", norm_last_only=True
+            obs_size, obs_bound, args.n1, args.n2, args.nr, actions,
+            noisy=True, norm="layer", norm_last_only=True
         ).apply(torch_init_with_orthogonal_and_zeros).to(self.device)
 
-        self.opt = torch.optim.AdamW(self.model.parameters(), args.learning_rate, weight_decay=0.0001)
+        self.opt = torch.optim.AdamW(self.model.parameters(), args.learning_rate, weight_decay=0.001)
         self.loss = torch.nn.MSELoss()
 
     def predict_egreedy_actions(
         self, states: torch.Tensor, epsilon: float
     ) -> torch.Tensor:
+        if epsilon > 0:
+            self.model.train()
+        else:
+            self.model.eval()
+        return self.predict_q(states).argmax(-1)
         batch_size = len(states)
         noise = torch.rand(batch_size, device=self.device) < epsilon
         random_actions = torch.randint(
@@ -46,7 +51,7 @@ class PQN:
         return ssg
 
     def predict_q(self, states: torch.Tensor) -> torch.Tensor:
-        self.model.eval()
+        # self.model.eval()
         with torch.no_grad():
             # B = states.shape[0]
             # FF = states.shape[1]

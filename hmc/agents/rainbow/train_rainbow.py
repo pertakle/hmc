@@ -1,5 +1,6 @@
 from copy import deepcopy
 import numpy as np
+import torch
 import gymnasium as gym
 import hmc.kostka.kostka as ko
 from .rainbow import Rainbow
@@ -7,6 +8,8 @@ from ..rl_utils import her, buffers
 import argparse
 import hmc.utils.solver as sol
 import hmc.utils.torch_utils as tut
+from hmc.utils import wrappers
+from hmc.utils.wrappers import PositiveWrapperVec
 
 
 class Queue:
@@ -99,6 +102,7 @@ def print_ep(episodes: buffers.ReplayEpData, ep_index: int) -> None:
 
 
 def train_rainbow(args: argparse.Namespace) -> Rainbow:
+    tut.set_torch_cube_device(torch.device("cpu"))
 
     env = gym.make_vec(
         args.env,
@@ -116,6 +120,11 @@ def train_rainbow(args: argparse.Namespace) -> Rainbow:
         ep_limit=args.eval_ep_limit,
         device=tut.get_torch_cube_device(),
     )
+    if args.reward_type == "reward":
+        env = PositiveWrapperVec(env)
+        eval_env = PositiveWrapperVec(eval_env)
+    env = wrappers.TorchToNumpyWrapperVec(env, tut.get_torch_cube_device())
+    eval_env = wrappers.TorchToNumpyWrapperVec(eval_env, tut.get_torch_cube_device())
 
     def evaluate_beam(agent: Rainbow, args: argparse.Namespace) -> float:
         def heuristic(states: np.ndarray, prev_values: np.ndarray) -> np.ndarray:
@@ -183,9 +192,9 @@ def train_rainbow(args: argparse.Namespace) -> Rainbow:
             if eps is not None:
                 train_eps = [eps]
                 for _ in range(args.her_future):
-                    train_eps.append(her.make_her_future(eps))
+                    train_eps.append(her.make_her_future(eps, args.reward_type))
                 for _ in range(args.her_final):
-                    train_eps.append(her.make_her_final(eps))
+                    train_eps.append(her.make_her_final(eps, args.reward_type))
                 train_eps = buffers.ReplayEpData.concatenate(train_eps)
                 #print("normal")
                 #print_ep(train_eps, 0)
@@ -199,8 +208,8 @@ def train_rainbow(args: argparse.Namespace) -> Rainbow:
                 replay_filled = True
                 print("Replay buffer filled.")
 
-            alpha = args.alpha  #np.interp(step, [0, args.steps], [args.alpha, 0]).item()
-            beta = np.interp(step, [0, args.max_steps], [args.beta, 1]).item()
+            alpha = args.alpha #np.interp(step, [0, args.steps], [args.alpha, 0]).item()
+            beta = args.beta #np.interp(step, [0, args.max_steps], [args.beta, 1]).item()
             data, indices, isw = replay_buffer.sample_transitions(
                 args.batch_size, alpha, beta
             )
@@ -221,8 +230,8 @@ def train_rainbow(args: argparse.Namespace) -> Rainbow:
             target_agent.copy_weights_from(agent, args.tau)
 
         if (step % args.eval_each) == 0:
-            #eval_rewards = evaluate_episode()
-            eval_rewards = evaluate_beam(agent, args)
+            eval_rewards = evaluate_episode()
+            # eval_rewards = evaluate_beam(agent, args)
             mean_queue.push(eval_rewards)
             eval_mean_rewards = mean_queue.mean()
             print(

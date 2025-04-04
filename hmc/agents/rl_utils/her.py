@@ -20,24 +20,26 @@ def recompute_episode_lengths(
     Returns:
         array of newly computed episode lengths
     """
-    goal_index = next_states.shape[2] // 2
-    new_lengths = np.zeros_like(prev_lengths)
-    finished = np.full(len(prev_lengths), False)
-    for t in range(prev_lengths.max()):
-        # assuming all episodes have at least one transition
-        new_lengths += ~finished
-        next_states_t = next_states[:, t]
+    EPS, L, S = next_states.shape
+    goal_index = S // 2
 
-        # check if the new episodes ended
-        finished_t = np.all(
-            next_states_t[:, :goal_index] == next_states_t[:, goal_index:], axis=1
-        )  # new goal reached
-        finished_t |= prev_lengths <= t  # previous episode ended
-        finished |= finished_t
-    return new_lengths
+    next_states_split = next_states.reshape(EPS, L, 2, goal_index)
+    new_ends = np.all(next_states_split[:, :, 0] == next_states_split[:, :, 1], axis=-1).astype(np.long)
+    # new_ends: [num_episodes, max_ep_len], True if it is a terminal state
+    # max_values, max_indices = new_ends.max(1)
+    max_values = new_ends.max(1)
+    max_indices = new_ends.argmax(1)
+    new_ep_lengths = max_indices + 1
+
+    #                   invalid transitions           goal not reached
+    invalid_lengths = (max_indices >= prev_lengths) | (max_values == 0)
+    new_ep_lengths = ~invalid_lengths * new_ep_lengths + invalid_lengths * prev_lengths
+    return new_ep_lengths
 
 
-def make_her_any(episodes: ReplayEpData, new_goals_indices: np.ndarray) -> ReplayEpData:
+def make_her_any(
+    episodes: ReplayEpData, new_goals_indices: np.ndarray, reward_type: str
+) -> ReplayEpData:
     """
     Creates a new fictious episodes with the *final* strategy.
     The new episodes will make a copy, so that `episodes` stays unchanged.
@@ -49,17 +51,17 @@ def make_her_any(episodes: ReplayEpData, new_goals_indices: np.ndarray) -> Repla
         created episodes
     """
     states, actions, rewards, next_states, ep_lengths = episodes
-    num_episodes = len(states)
 
     # copy episodes
     her_states = states.copy()
     her_actions = actions.copy()
-    her_rewards = rewards.copy()  # rewards are all -1 anyway
+    # her_rewards = rewards.copy()  # rewards are all -1 anyway
     her_next_states = next_states.copy()
 
     goal_index = states.shape[2] // 2
     # new_goals_indices = ep_lengths - 1
-    new_goals = next_states[np.arange(num_episodes), new_goals_indices][:, goal_index:]
+    _brang = np.arange(episodes.batch_size())
+    new_goals = next_states[_brang, new_goals_indices][:, :goal_index]
 
     # set new goals
     her_states[:, :, goal_index:] = new_goals[:, np.newaxis]
@@ -67,16 +69,24 @@ def make_her_any(episodes: ReplayEpData, new_goals_indices: np.ndarray) -> Repla
 
     her_ep_lengths = recompute_episode_lengths(her_next_states, ep_lengths)
 
+    if reward_type == "punish":
+        her_rewards = rewards.copy()  # rewards are all -1 anyway
+    elif reward_type == "reward":
+        her_rewards = np.zeros_like(rewards)
+        her_rewards[_brang, her_ep_lengths - 1] = 1
+    else:
+        assert False, "Unknown reward type!"
+
     return ReplayEpData(
         her_states, her_actions, her_rewards, her_next_states, her_ep_lengths
     )
 
 
-def make_her_final(episodes: ReplayEpData) -> ReplayEpData:
-    return make_her_any(episodes, episodes.lengths - 1)
+def make_her_final(episodes: ReplayEpData, reward_type: str) -> ReplayEpData:
+    return make_her_any(episodes, episodes.lengths - 1, reward_type)
 
 
-def make_her_future(episodes: ReplayEpData) -> ReplayEpData:
+def make_her_future(episodes: ReplayEpData, reward_type: str) -> ReplayEpData:
     lcm = np.lcm.reduce(episodes.lengths)  # for fair distribution
     goal_indices = np.random.randint(0, lcm, len(episodes.lengths)) % episodes.lengths
-    return make_her_any(episodes, goal_indices)
+    return make_her_any(episodes, goal_indices, reward_type)

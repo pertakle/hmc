@@ -1,5 +1,43 @@
 import numpy as np
+import torch
 from hmc.agents.nn.noisy_linear import NoisyLinear
+import gymnasium as gym
+
+class TorchToNumpyWrapperVec(gym.vector.VectorWrapper):
+    def __init__(self, env: gym.vector.VectorEnv, device=None) -> None:
+        super().__init__(env)
+        self._device = device
+
+    def reset(self, *args, **kwargs):
+        next_obs, info = self.env.reset(*args, **kwargs)
+        return self.torch_to_numpy(next_obs, np.long), info
+
+    def step(self, actions: np.ndarray):
+        next_obs, rewards, terminations, truncations, info = self.env.step(
+            self.numpy_to_torch(actions, torch.long)
+        )
+        return (
+            self.torch_to_numpy(next_obs, np.long),
+            self.torch_to_numpy(rewards, np.float32),
+            self.torch_to_numpy(terminations, np.bool),
+            self.torch_to_numpy(truncations, np.bool),
+            info,
+        )
+
+    def numpy_to_torch(self, array: np.ndarray, dtype=None) -> torch.Tensor:
+        return torch.as_tensor(array, dtype=dtype, device=self._device)
+
+    def torch_to_numpy(self, tensor: torch.Tensor, dtype=None) -> np.ndarray:
+        return tensor.cpu().numpy()
+
+
+class PositiveWrapperVec(gym.vector.VectorWrapper):
+    def __init__(self, env: gym.vector.VectorEnv):
+        super().__init__(env)
+
+    def step(self, actions):
+        next_obs, rewards, terminations, truncations, info = super().step(actions)
+        return next_obs, rewards + 1 + terminations, terminations, truncations, info
 
 
 def typed_torch_function(device, *types, via_np=False):

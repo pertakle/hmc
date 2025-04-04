@@ -1,5 +1,5 @@
 import torch
-from typing import NamedTuple, Iterable
+from typing import NamedTuple, Iterable, Tuple
 import hmc.utils.torch_utils as tut
 
 
@@ -64,14 +64,20 @@ class TorchReplayEpData(NamedTuple):
     def get_device(self) -> torch.device:
         return self.states.device
 
+    def get_ep_limit(self) -> int:
+        return self.rewards.shape[1]
+
     def unroll(self) -> TorchReplayData:
+        """
+        TODO: `self.compute_returns(gamma)`
+        """
         mask = (
             torch.arange(self.states.shape[1], device=tut.get_torch_cube_device())[
                 None, :
             ]
             < self.lengths[:, None]
         )
-        states = self.states[mask]
+        states = self.states[mask];
         actions = self.actions[mask]
         rewards = self.rewards[mask]
         next_states = self.next_states[mask]
@@ -149,7 +155,7 @@ class TorchEpisodeBuffer:
     def store_transitions(
         self,
         transitions: TorchReplayData,
-    ) -> TorchReplayEpData:# | None:
+    ) -> TorchReplayEpData:
         """
         Stores the newly observed transitions including those between episodes.
         It automatically takes care of auto-reset transitions.

@@ -65,7 +65,7 @@ class Rainbow:
     ) -> None:
         super().__init__()
 
-        self.hidden_size = args.hidden_size
+        self.hidden_size = 512
         self.num_actions = actions
         self.num_atoms = args.atoms
         self.atoms_np, self.atom_delta = np.linspace(args.v_min, args.v_max, args.atoms, retstep=True)
@@ -82,7 +82,7 @@ class Rainbow:
         ).to(Rainbow.device)
 
         self.opt = torch.optim.Adam(self.network.parameters(), lr=args.learning_rate)
-        self.loss = torch.nn.KLDivLoss(reduction="none")
+        self.loss = torch.nn.CrossEntropyLoss(reduction="none")
 
     def probs_to_expected(self, probs: np.ndarray) -> np.ndarray:
         return (probs * self.atoms_np[None, None]).sum(2)
@@ -117,12 +117,12 @@ class Rainbow:
         self.network.train()
         predictions = self.network(states)
         #predictions = predictions.view(-1, self.num_actions, self.num_atoms)
-        predictions = predictions[torch.arange(len(predictions)), actions]
-        predictions = predictions.log_softmax(-1)
+        predictions = predictions[torch.arange(len(predictions), device=states.device), actions]
+        # predictions = predictions.log_softmax(-1)
 
         loss = self.loss(predictions, target)
         self.opt.zero_grad()
-        loss = loss.sum(1)
+        # loss = loss.sum(1)
         loss_reduced = loss @ isw
         loss_reduced.backward()
         with torch.no_grad():

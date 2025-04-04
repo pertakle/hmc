@@ -6,6 +6,7 @@ import numpy as np
 import hmc.utils.torch_utils as tut
 import hmc.agents.rl_utils.torch_buffers as tbuf
 import hmc.agents.rl_utils.torch_her as ther
+from hmc.utils.wrappers import PositiveWrapperVec
 
 def evaluate(agent: PQN, env: gym.vector.VectorEnv) -> tuple[float, float]:
     dones = torch.full([env.num_envs], False, dtype=torch.bool, device=tut.get_torch_cube_device())
@@ -40,26 +41,26 @@ def make_train_data(
     next_v = next_q.max(-1).values
 
     assert torch.all(episodes.lengths > 0)
-    end_next_stategoals = episodes.next_states[range(B), episodes.lengths - 1].reshape(B, 2, -1)
-    end_terminated = torch.all(end_next_stategoals[:, 0] == end_next_stategoals[:, 1], dim=1)
+    last_next_stategoals = episodes.next_states[range(B), episodes.lengths - 1].reshape(B, 2, -1)
+    end_terminated = torch.all(last_next_stategoals[:, 0] == last_next_stategoals[:, 1], dim=1)
 
     returns = torch.zeros_like(episodes.rewards)
 
     # last possible transition manually
-    # must be truncated
+    # [-1] is either the last -> we use ~end_terminated
+    #      or it is not valid -> we do not care anyway about this value
     returns[:, -1] = episodes.rewards[:, -1] + ~end_terminated * gamma * next_v[:, -1]
 
-    
     for t in range(T - 2, -1, -1):
-        # this transition terminated
-        terminations = (t == (episodes.lengths - 1)) & end_terminated
-        dones = terminations | ((t + 1) == episodes.lengths)
-        truncations = dones & ~terminations
+        # this transition ended/terminated
+        dones = (t + 1) == episodes.lengths
+        terminations = dones & end_terminated
 
-        # trunc: l=0
-        # else : l=lambd
-        l_truncated = l * ~truncations
-        gl_next = l_truncated * returns[:, t + 1] + (1 - l_truncated) * next_v[:, t]
+        #       terminated: 0                                    -->  handled one below
+        # truncated ~ done: next_v[t]                            -->  ll = 0
+        #            !done: l * R[t+1] + (1 - l) * next_v[:, t]  -->  ll = l
+        ll = l * ~dones  # typechecker is wrong: `dones` is always a Tensor, not a bool
+        gl_next = ll * returns[:, t + 1] + (1 - ll) * next_v[:, t]
         returns[:, t] = episodes.rewards[:, t] + ~terminations * gamma * gl_next
 
     # unroll returns
@@ -118,6 +119,10 @@ def train_pqn(args: argparse.Namespace) -> PQN:
         tut.get_torch_cube_device(),
         states.dtype,
     )
+    if args.reward_type == "reward":
+        env = PositiveWrapperVec(env)
+        eval_env = PositiveWrapperVec(eval_env)
+
     training = True
     step = 0
     while training:
@@ -142,9 +147,9 @@ def train_pqn(args: argparse.Namespace) -> PQN:
             # augment with HER
             train_eps = [eps]
             for _ in range(args.her_future):
-                train_eps.append(ther.torch_make_her_future(eps))
+                train_eps.append(ther.torch_make_her_future(eps, args.reward_type))
             for _ in range(args.her_final):
-                train_eps.append(ther.torch_make_her_final(eps))
+                train_eps.append(ther.torch_make_her_final(eps, args.reward_type))
             train_eps = tbuf.TorchReplayEpData.concatenate(train_eps)
 
             # compute target values

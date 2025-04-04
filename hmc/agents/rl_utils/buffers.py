@@ -55,6 +55,9 @@ class ReplayEpData(NamedTuple):
     def concatenate(data: Iterable["ReplayEpData"]) -> "ReplayEpData":
         return ReplayEpData(*(np.concatenate(d, axis=0) for d in zip(*data)))
 
+    def batch_size(self) -> int:
+        return len(self.states)
+
     def unroll(self) -> ReplayData:
         mask = np.arange(self.states.shape[1])[None, :] < self.lengths[:, None]
         states = self.states[mask]

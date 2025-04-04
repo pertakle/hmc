@@ -38,7 +38,7 @@ def torch_recompute_episode_lengths(
 
 
 def torch_make_her_any(
-    episodes: TorchReplayEpData, new_goals_indices: torch.Tensor
+    episodes: TorchReplayEpData, new_goals_indices: torch.Tensor, reward_type: str
 ) -> TorchReplayEpData:
     """
     Creates a new fictious episodes with the *final* strategy.
@@ -55,32 +55,39 @@ def torch_make_her_any(
     # copy episodes
     her_states = states.clone()
     her_actions = actions.clone()
-    her_rewards = rewards.clone()  # rewards are all -1 anyway
+
     her_next_states = next_states.clone()
 
     goal_index = states.shape[2] // 2
     # new_goals_indices = ep_lengths - 1
-    new_goals = next_states[
-        torch.arange(episodes.batch_size(), dtype=torch.long, device=states.device),
-        new_goals_indices,
-    ][:, goal_index:]
+    _brang = torch.arange(episodes.batch_size(), dtype=torch.long, device=states.device)
+    new_goals = next_states[_brang, new_goals_indices][:, :goal_index]
 
     # set new goals
     her_states[:, :, goal_index:] = new_goals[:, None]
     her_next_states[:, :, goal_index:] = new_goals[:, None]
 
+    # HER episodes could be shorter than the indices of goals
     her_ep_lengths = torch_recompute_episode_lengths(her_next_states, ep_lengths)
+
+    if reward_type == "punish":
+        her_rewards = rewards.clone()  # rewards are all -1 anyway
+    elif reward_type == "reward":
+        her_rewards = torch.zeros_like(rewards)
+        her_rewards[_brang, her_ep_lengths - 1] = 1
+    else:
+        assert False, "Unknown reward type!"
 
     return TorchReplayEpData(
         her_states, her_actions, her_rewards, her_next_states, her_ep_lengths
     )
 
 
-def torch_make_her_final(episodes: TorchReplayEpData) -> TorchReplayEpData:
-    return torch_make_her_any(episodes, episodes.lengths - 1)
+def torch_make_her_final(episodes: TorchReplayEpData, reward_type: str = "punish") -> TorchReplayEpData:
+    return torch_make_her_any(episodes, episodes.lengths - 1, reward_type)
 
 
-def torch_make_her_future(episodes: TorchReplayEpData) -> TorchReplayEpData:
+def torch_make_her_future(episodes: TorchReplayEpData, reward_type: str = "punish") -> TorchReplayEpData:
     lcm = int(functools.reduce(torch.lcm, episodes.lengths))
     # lcm = np.lcm.reduce(episodes.lengths)  # for fair distribution
     goal_indices = (
@@ -93,4 +100,4 @@ def torch_make_her_future(episodes: TorchReplayEpData) -> TorchReplayEpData:
         )
         % episodes.lengths
     )
-    return torch_make_her_any(episodes, goal_indices)
+    return torch_make_her_any(episodes, goal_indices, reward_type)

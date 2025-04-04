@@ -6,8 +6,7 @@ import numpy as np
 class LightsOut(base_env.BaseTorchEnv):
 
     def __init__(self, size: int, scramble_len: int, ep_limit: int, device=None) -> None:
-        self._size = size
-        super().__init__(scramble_len, ep_limit, device)
+        super().__init__(size, scramble_len, ep_limit, device)
 
         self.observation_space = gym.spaces.MultiDiscrete(np.full([2 * self._size**2], 2))
         self.action_space = gym.spaces.Discrete(self._size**2)
@@ -28,9 +27,6 @@ class LightsOut(base_env.BaseTorchEnv):
         max_col = min(self._size, col + 2)
         state[min_row : max_row, min_col : max_col] = 1 - state[min_row : max_row, min_col : max_col]
 
-    def _is_solved(self) -> bool:
-        return bool(torch.all(self._state == self._goal).item())
-
     def print(self) -> None:
         import numpy as np
         letters = np.array(["O", "X"])
@@ -42,11 +38,11 @@ class LightsOut(base_env.BaseTorchEnv):
 
 class LightsOutVec(base_env.BaseTorchEnvVec):
     
-    metadata = {"autoreset_mode": gym.vector.AutoresetMode.NEXT_STEP}
+    metadata = base_env.BaseTorchEnvVec.metadata
     
-    def __init__(self, size: int, num_envs: int, scramble_len: int, ep_limit: int, device=None) -> None:
-        self._size = size
-        super().__init__(num_envs, scramble_len, ep_limit, device)
+    def __init__(self, num_envs: int, size: int, scramble_len: int, ep_limit: int, device=None) -> None:
+        super().__init__(num_envs, size, scramble_len, ep_limit, device)
+
         self.single_observation_space = gym.spaces.MultiDiscrete(np.full([2 * self._size**2], 2))
         self.single_action_space = gym.spaces.Discrete(self._size**2)
         self.observation_space = gym.spaces.MultiDiscrete(np.full([num_envs, 2 * self._size**2], 2))
@@ -58,12 +54,6 @@ class LightsOutVec(base_env.BaseTorchEnvVec):
     def _new_states(self, num_states: int) -> torch.Tensor:
         """Returns a batch of `num_states` new states."""
         return torch.zeros([num_states, self._size, self._size], dtype=torch.long, device=self._device)
-
-    # def _is_solved(self) -> torch.Tensor:
-        # """
-        # Returns a vector of bools whether each state in `self._states` reached it's `self._goals`.
-        # """
-        # return torch.all(self._states == self._goals, dim=list(range(1, len(self._states.shape))))
 
     def _scramble(self, states: torch.Tensor) -> None:
         """Scrambles `states` in-place with `self._scramble_len` random moves."""

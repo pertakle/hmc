@@ -10,21 +10,25 @@ from gymnasium.envs.registration import register
 #   - "sync" | "async" will make a gym wrapper of RubiksCubeEnv
 
 register(
+    id="hmc/Sliding-v0",
+    entry_point="hmc.env.sliding:Sliding",
+    vector_entry_point="hmc.env.sliding:SlidingVec",
+    disable_env_checker=True,
+    order_enforce=False,
+)
+
+register(
     id="hmc/LightsOut-v0",
     entry_point="hmc.env.lights_out:LightsOut",
     vector_entry_point="hmc.env.lights_out:LightsOutVec",
-    disable_env_checker=False,
+    disable_env_checker=True,
+    order_enforce=False,
 )
 
 register(
     id="hmc/RubiksCube-v0",
     entry_point="hmc.env.cube_env:RubiksCubeEnv",
     vector_entry_point="hmc.env.cube_env:RubiksCubeEnvVec",
-    disable_env_checker=False,
-)
-register(
-    id="hmc/TorchRubiksCube-v0",
-    entry_point="hmc.env.torch_cube_env:TorchRubiksCubeEnv",
-    vector_entry_point="hmc.env.torch_cube_env:TorchRubiksCubeEnvVec",
-    disable_env_checker=False,
+    disable_env_checker=True,
+    order_enforce=False,
 )
