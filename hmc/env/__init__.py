@@ -10,25 +10,31 @@ from gymnasium.envs.registration import register
 #   - "sync" | "async" will make a gym wrapper of RubiksCubeEnv
 
 register(
-    id="hmc/Sliding-v0",
-    entry_point="hmc.env.sliding:Sliding",
-    vector_entry_point="hmc.env.sliding:SlidingVec",
-    disable_env_checker=True,
-    order_enforce=False,
+    id="hmc/ProblemEnv-v0",
+    entry_point="hmc.env.problem_env:ProblemEnv",
+    vector_entry_point="hmc.env.problem_env:ProblemEnvVec",
 )
 
-register(
-    id="hmc/LightsOut-v0",
-    entry_point="hmc.env.lights_out:LightsOut",
-    vector_entry_point="hmc.env.lights_out:LightsOutVec",
-    disable_env_checker=True,
-    order_enforce=False,
-)
+# register(
+    # id="hmc/Sliding-v0",
+    # entry_point="hmc.env.sliding:Sliding",
+    # vector_entry_point="hmc.env.sliding:SlidingVec",
+    # disable_env_checker=True,
+    # order_enforce=False,
+# )
 
-register(
-    id="hmc/RubiksCube-v0",
-    entry_point="hmc.env.cube_env:RubiksCubeEnv",
-    vector_entry_point="hmc.env.cube_env:RubiksCubeEnvVec",
-    disable_env_checker=True,
-    order_enforce=False,
-)
+# register(
+    # id="hmc/LightsOut-v0",
+    # entry_point="hmc.env.lights_out:LightsOut",
+    # vector_entry_point="hmc.env.lights_out:LightsOutVec",
+    # disable_env_checker=True,
+    # order_enforce=False,
+# )
+
+# register(
+    # id="hmc/RubiksCube-v0",
+    # entry_point="hmc.env.cube_env:RubiksCubeEnv",
+    # vector_entry_point="hmc.env.cube_env:RubiksCubeEnvVec",
+    # disable_env_checker=True,
+    # order_enforce=False,
+# )

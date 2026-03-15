@@ -8,7 +8,7 @@ KostkaVek = np.ndarray[Tuple[-1, 6, 3, 3], np.dtype[ko.ColorT]]
 
 
 def nova_kostka_vek(n: int) -> KostkaVek:
-    return np.stack([ko.SLOZENA_KOSTKA] * n, dtype=ko.SLOZENA_KOSTKA.dtype)
+    return np.stack([ko._SLOZENA_KOSTKA] * n, dtype=ko._SLOZENA_KOSTKA.dtype)
 
 
 def je_stejna(kostka1: KostkaVek, kostka2: KostkaVek | ko.Kostka) -> np.ndarray:
@@ -18,7 +18,7 @@ def je_stejna(kostka1: KostkaVek, kostka2: KostkaVek | ko.Kostka) -> np.ndarray:
 
 
 def je_slozena(kostka: KostkaVek) -> np.ndarray:
-    return je_stejna(kostka, ko.SLOZENA_KOSTKA)
+    return je_stejna(kostka, ko._SLOZENA_KOSTKA)
 
 
 def print_kostku_vek(kostka: KostkaVek) -> None:

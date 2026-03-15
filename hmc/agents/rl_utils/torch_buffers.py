@@ -60,6 +60,12 @@ class TorchReplayEpData(NamedTuple):
 
     def batch_size(self) -> int:
         return len(self.states)
+     
+    def unrolled_batch_size(self) -> int:
+        # TODO: use torch.LongTensor
+        size = self.lengths.sum().item()
+        assert type(size) == int
+        return size
 
     def get_device(self) -> torch.device:
         return self.states.device
@@ -152,6 +158,13 @@ class TorchEpisodeBuffer:
             [num_envs], False, dtype=torch.bool, device=self.device
         )
 
+    def clear(self) -> None:
+        self.next_indices.zero_()
+
+        # no because we can utilize the remaining of trajectories
+        # it will be shorter but that's not a problem
+        # self.reseting.zero_()  
+
     def store_transitions(
         self,
         transitions: TorchReplayData,
@@ -187,3 +200,31 @@ class TorchEpisodeBuffer:
         self.reseting = finished
 
         return finished_ep
+
+
+class TorchReplayEpBuffer:
+    def __init__(self) -> None:
+        self._data = []
+        self._data_size = 0
+
+    def add(self, data: TorchReplayEpData) -> None:
+        self._data.append(data)
+        self._data_size += data.unrolled_batch_size()
+         
+    def extend(self, data: Iterable[TorchReplayEpData]) -> None:
+        for single_data in data:
+            self.add(single_data)
+
+    def _clear(self) -> None:
+        self._data.clear()
+        self._data_size = 0
+
+    def current_data_size(self) -> int:
+        return self._data_size
+
+    def pop_data(self) -> TorchReplayEpData:
+        assert len(self._data) > 0, "No data for the batch!"
+        data = TorchReplayEpData.concatenate(self._data)
+        self._clear()
+        return data
+

@@ -19,19 +19,18 @@ class PPO:
         self.batch_size = args.batch_size
         self.gamma = args.gamma
 
-        self.clip_grad_norm = 0.5#args.clip_grad_norm
-        self.clip_epsilon = 0.25#args.clip_epsilon
-        self.entropy_reg = 0.01#args.entropy_reg
-        self.trace_lambda = 0.95
-        self.train_epochs = 1
+        self.clip_grad_norm = args.clip_grad_norm
+        self.clip_epsilon = args.clip_epsilon
+        self.entropy_reg = args.entropy_reg
+        self.lambd = args.lambd
+        self.epochs = args.epochs
 
         self.actor = ResMLP(
             obs_size, obs_bound, args.n1, args.n2, args.nr, num_actions,
             noisy=False, norm=None, norm_last_only=False
         ).apply(torch_init_with_orthogonal_and_zeros).to(self.device)
-        # TODO: init out *0.01
         with torch.no_grad():
-            self.actor.out.weight.mul_(0.01)
+            self.actor.out.weight.mul_(args.last_layer_init_scale)
 
         self.critic = ResMLP(
             obs_size, obs_bound, args.n1, args.n2, args.nr, 1,
@@ -59,7 +58,7 @@ class PPO:
     def train(self, episodes: tbuf.TorchReplayEpData) -> None:
         old_apr = self._action_probs(episodes)
         # print("train size", episodes.lengths.sum().item())
-        for epoch in range(self.train_epochs):
+        for epoch in range(self.epochs):
             self.train_epoch(episodes, old_apr)
 
     def _action_probs(self, train_data: tbuf.TorchReplayEpData) -> torch.Tensor:
@@ -92,14 +91,13 @@ class PPO:
         for t in range(train_data.lengths.max() - 2, -1, -1):
             not_dones_t = train_data.lengths - 1 != t
             gae[:, t] = (
-                train_data.rewards[:, t] + self.gamma * not_terminations[:, t] + next_values[:, t]
+                train_data.rewards[:, t] + self.gamma * not_terminations[:, t] * next_values[:, t]
                 - values[:, t] + 
-                self.gamma * self.trace_lambda * not_dones_t * gae[:, t+1]
+                self.gamma * self.lambd * not_dones_t * gae[:, t+1]
             )
 
-        # TODO: normalize here or below returns
-        gae = (gae - gae.mean()) / (gae.std() + 1e-8)
         returns = gae + values
+        # gae = (gae - gae.mean()) / (gae.std() + 1e-8)
 
         # Unroll states, action, a_probs, gae, returns
         unroll_mask = (
@@ -117,8 +115,8 @@ class PPO:
         states, actions, advantages, returns = self._prep_data(train_data)
 
         num_transitions = len(states)
-        # indices = torch.randperm(num_transitions)
-        indices = torch.randint(0, num_transitions, [num_transitions])
+        indices = torch.randperm(num_transitions)
+        # indices = torch.randint(0, num_transitions, [num_transitions])
         for i in range(0, num_transitions - self.batch_size + 1, self.batch_size):
             b_indices = indices[i : i + self.batch_size]
 
@@ -142,7 +140,6 @@ class PPO:
         self.critic.train()
 
         logits = self.actor(states)
-        # print(logits.exp().max())
         probs = logits.softmax(-1)
         rho = probs[range(len(states)), actions] / (old_apr + 1e-8)
         # rho = rho / rho.max()
@@ -153,11 +150,9 @@ class PPO:
         ).mean()
 
         entropy = torch.distributions.Categorical(logits=logits).entropy().mean()
-        # print(entropy.item())
         critic_loss = self.critic_loss(self.critic(states).squeeze(), returns)
         
         loss = ppo_loss - entropy * self.entropy_reg + critic_loss
-        # print(dict(dict(dict(self.critic.named_modules())[""].named_modules())["l1"].named_modules())["0"].weight.norm())
 
         self.opt.zero_grad()
         loss.backward()

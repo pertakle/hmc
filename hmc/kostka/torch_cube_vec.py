@@ -8,6 +8,9 @@ TCubeVec = torch.Tensor
 
 
 def new_cube_vec(num_cubes: int) -> TCubeVec:
+    # TODO: is torch.Tensor.repeat faster?
+    if num_cubes == 0:
+        return torch.empty([0, 6, 3, 3], dtype=tcu.TColorT, device=tut.get_torch_cube_device())
     return torch.stack([tcu._SOLVED_CUBE] * num_cubes)
 
 

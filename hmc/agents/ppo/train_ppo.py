@@ -8,6 +8,48 @@ import numpy as np
 import hmc.utils.torch_utils as tut
 import hmc.agents.rl_utils.torch_buffers as tbuf
 import hmc.agents.rl_utils.torch_her as ther
+import hmc.utils.solver as sol
+from hmc.problems.baseproblem import Problem
+from hmc.problems.sliding import Sliding
+from hmc.problems.cube import RubiksCube
+from hmc.problems.lightsout import LightsOut
+
+# TODO: move `evaluate` and `evaluate_beam` to hmc/utils/solver.py to have only a single implementation
+def evaluate_beam(
+    agent: PPO,
+    problem: Problem,
+    scramble_len: int,
+    time_limit: int,
+    beam_width: int,
+    num_evals: int,
+) -> tuple[float, float]:
+
+    def heuristic(stategoals: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        assert len(h.shape) == 1
+        # print(h.exp().min().cpu().numpy(), h.exp().max().cpu().numpy())
+        probs = agent.predict_action_probs(stategoals)
+        # res = h[:, None] * probs
+        res = h[:, None] + probs.log()
+        # print(h.cpu().numpy().shape, probs.cpu().numpy().shape, res.cpu().numpy().shape)
+        # print()
+        return res
+
+    solved = 0
+    solution_len_sum = 0
+    for run in range(num_evals):
+        goal = problem.new_state()
+        problem.scramble(goal, scramble_len)
+
+        solution_len = sol.solve_beam_uniuniversal_stateaction(
+            problem, goal, heuristic, time_limit, beam_width, 0, True  # logspace for heuristic
+            # problem, goal, heuristic, time_limit, beam_width, 1, True
+        )
+
+        if solution_len >= 0:
+            solved += 1
+            solution_len_sum += solution_len
+        # input("run done")
+    return solved / num_evals, solution_len_sum / (solved + 1e-8)
 
 def evaluate(agent: PPO, env: gym.vector.VectorEnv) -> tuple[float, float]:
     dones = torch.full([env.num_envs], False, dtype=torch.bool, device=tut.get_torch_cube_device())
@@ -26,28 +68,25 @@ def evaluate(agent: PPO, env: gym.vector.VectorEnv) -> tuple[float, float]:
 
 def train_ppo(args: argparse.Namespace) -> PPO:
 
+    if args.problem == "sliding":
+        problem = Sliding(args.env_size, tut.get_torch_cube_device(), args.seed)
+    elif args.problem == "cube":
+        problem = RubiksCube(args.env_size, tut.get_torch_cube_device(), args.seed)
+    elif args.problem == "lightsout":
+        problem = LightsOut(args.env_size, tut.get_torch_cube_device(), args.seed)
+    else:
+        raise ValueError
+
     env = gym.make_vec(
-        args.env,
-        size=args.env_size,
-        num_envs=args.num_envs,
+        "hmc/ProblemEnv-v0",
+        args.num_envs,
+        problem=problem,
         scramble_len=args.scramble_len,
         ep_limit=args.ep_limit,
-        device=tut.get_torch_cube_device(),
     )
-    eval_env = gym.make_vec(
-        args.env,
-        size=args.env_size,
-        num_envs=args.eval_num_envs,
-        scramble_len=args.eval_scramble_len,
-        ep_limit=args.eval_ep_limit,
-        device=tut.get_torch_cube_device(),
-    )
-    # from hmc.env.cube_env import RubiksCube2x2WrapperVec
-    # env = RubiksCube2x2WrapperVec(env)
-    # eval_env = RubiksCube2x2WrapperVec(eval_env)
+
     if args.reward_type == "reward":
         env = PositiveWrapperVec(env)
-        eval_env = PositiveWrapperVec(eval_env)
 
     assert type(env.single_observation_space) == gym.spaces.MultiDiscrete
     assert type(env.single_action_space) == gym.spaces.Discrete
@@ -64,56 +103,60 @@ def train_ppo(args: argparse.Namespace) -> PPO:
     )
 
     states = env.reset()[0]
-    replay_ep_buffer = tbuf.TorchEpisodeBuffer(
+    ep_buffer = tbuf.TorchEpisodeBuffer(
         args.num_envs,
         states[0].shape,
         args.ep_limit,
         tut.get_torch_cube_device(),
         states.dtype,
     )
+    replay_buffer = tbuf.TorchReplayEpBuffer()
+
     training = True
     step = 0
-    ep_buffer = []
-    # res = False
     while training:
         step += 1
         
-        # print(states[:, 1].count_nonzero())
         probs = agent.predict_action_probs(states)
         actions = torch.distributions.Categorical(probs).sample()
         next_states, rewards, terminations, truncations, _ = env.step(actions)
-        # if not res:
-            # print(states[0].cpu().numpy().reshape(2, 2, 2))
-            # print(probs[0].cpu().numpy())
-            # input()
-        # res = not res and (terminations[0] or truncations[0])
 
         # gather train_data
-        replay_data = tbuf.TorchReplayData(
+        transitions = tbuf.TorchReplayData(
             states, actions, rewards, terminations, truncations, next_states
         )
-        eps = replay_ep_buffer.store_transitions(replay_data)
-        ep_buffer.append(eps)
+        eps = ep_buffer.store_transitions(transitions)
 
 
         # train
         if eps.batch_size() > 0:
-            # augment with HER
-            # train_eps = [eps]
+            replay_buffer.add(eps)
             for _ in range(args.her_future):
-                ep_buffer.append(ther.torch_make_her_future(eps, args.reward_type))
+                replay_buffer.add(ther.torch_make_her_future(eps, args.reward_type))
             for _ in range(args.her_final):
-                ep_buffer.append(ther.torch_make_her_final(eps, args.reward_type))
-            if len(ep_buffer) > args.num_envs / 2:
-                train_eps = tbuf.TorchReplayEpData.concatenate(ep_buffer)
-                ep_buffer.clear()
-                # train step
+                replay_buffer.add(ther.torch_make_her_final(eps, args.reward_type))
+
+            if replay_buffer.current_data_size() >= args.min_train_size:
+                train_eps = replay_buffer.pop_data()
                 agent.train(train_eps)
+
+                # clear old episodes
+                ep_buffer.clear()
 
 
         if step % args.eval_each == 0:
-            mean, std = evaluate(agent, eval_env)
-            print(f"Evaluation after {step} steps: {mean:.2f} +-{std:.2f}")
+            solved, length = evaluate_beam(
+                agent,
+                problem,
+                args.eval_scramble_len,
+                args.eval_ep_limit,
+                args.beam_size,
+                args.eval_num_envs
+            )
+            print(f"Evaluation after {step} steps: solved {solved:.2f}, length {length:.2f}.")
+
+        if step >= args.max_steps:
+            training = False
 
         states = next_states
 

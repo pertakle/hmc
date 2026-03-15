@@ -104,39 +104,74 @@ def print_ep(episodes: buffers.ReplayEpData, ep_index: int) -> None:
 def train_rainbow(args: argparse.Namespace) -> Rainbow:
     tut.set_torch_cube_device(torch.device("cpu"))
 
+    from hmc.problems.sliding import Sliding
+    problem = Sliding(args.env_size, torch.device("cuda"), args.seed)
     env = gym.make_vec(
-        args.env,
-        size=args.env_size,
-        num_envs=args.num_envs,
+        "hmc/ProblemEnv-v0",
+        args.num_envs,
+        problem=problem,
         scramble_len=args.scramble_len,
         ep_limit=args.ep_limit,
-        device=tut.get_torch_cube_device(),
     )
     eval_env = gym.make_vec(
-        args.env,
-        size=args.env_size,
-        num_envs=args.eval_num_envs,
+        "hmc/ProblemEnv-v0",
+        args.eval_num_envs,
+        problem=problem,
         scramble_len=args.eval_scramble_len,
         ep_limit=args.eval_ep_limit,
-        device=tut.get_torch_cube_device(),
     )
+
+    # env = gym.make_vec(
+        # args.env,
+        # size=args.env_size,
+        # num_envs=args.num_envs,
+        # scramble_len=args.scramble_len,
+        # ep_limit=args.ep_limit,
+        # device=tut.get_torch_cube_device(),
+    # )
+    # eval_env = gym.make_vec(
+        # args.env,
+        # size=args.env_size,
+        # num_envs=args.eval_num_envs,
+        # scramble_len=args.eval_scramble_len,
+        # ep_limit=args.eval_ep_limit,
+        # device=tut.get_torch_cube_device(),
+    # )
     if args.reward_type == "reward":
         env = PositiveWrapperVec(env)
         eval_env = PositiveWrapperVec(eval_env)
     env = wrappers.TorchToNumpyWrapperVec(env, tut.get_torch_cube_device())
     eval_env = wrappers.TorchToNumpyWrapperVec(eval_env, tut.get_torch_cube_device())
 
-    def evaluate_beam(agent: Rainbow, args: argparse.Namespace) -> float:
-        def heuristic(states: np.ndarray, prev_values: np.ndarray) -> np.ndarray:
-            q_values = agent.predict_q_values(states, True)
-            return q_values
-
-        made_moves = 0
-        for _ in range(args.eval_num_envs):
-            cube = ko.nova_kostka()
+    def evaluate_beam(agent: Rainbow, args: argparse.Namespace) -> tuple[float, int]:
+        def new_state_fn():
+            return ko.nova_kostka().reshape(-1)
+        def scramble_fn(state):
+            cube = state.reshape(6, 3, 3)
             ko.zamichej(cube, args.eval_scramble_len)
-            made_moves += sol.solve_beam_universal(cube, heuristic, args.beam_size, args.eval_ep_limit)
-        return -made_moves / args.eval_num_envs
+
+        # def heuristic_fn
+        # def make_all_actions_fn
+
+        solutions = 0
+        lengths = 0
+        for _ in range(args.eval_num_envs):
+            beam_res = sol.solve_beam_uniuniversal(
+                lambda : ko.nova_kostka().reshape(-1),
+                lambda x: ko.zamichej(x.reshape(6, 3, 3), args.eval_scramble_len),
+                lambda states, h: agent.predict_q_values(states, True).max(1),
+                lambda states: kv.tahni_vsechny_tahy_vek(states.reshape(-1, 6, 3, 3)),
+                args.beam_size,
+                args.eval_ep_limit,
+                0,
+                True
+            )
+            if beam_res >= 0:
+                solutions += 1
+                lengths += beam_res
+        lengths /= solutions
+        return lengths, solutions
+
 
     def evaluate_episode() -> float:
         rewards_total = 0
@@ -231,6 +266,7 @@ def train_rainbow(args: argparse.Namespace) -> Rainbow:
 
         if (step % args.eval_each) == 0:
             eval_rewards = evaluate_episode()
+            # eval_rewards = evaluate_beam(agent, args)
             # eval_rewards = evaluate_beam(agent, args)
             mean_queue.push(eval_rewards)
             eval_mean_rewards = mean_queue.mean()

@@ -1,100 +1,68 @@
 import argparse
 import gymnasium as gym
 from .pqn import PQN
+from .pqn_plus import PQNPlus
 import torch
 import numpy as np
 import hmc.utils.torch_utils as tut
 import hmc.agents.rl_utils.torch_buffers as tbuf
 import hmc.agents.rl_utils.torch_her as ther
 from hmc.utils.wrappers import PositiveWrapperVec
+import hmc.utils.solver as sol
+from hmc.problems.baseproblem import Problem
+from hmc.problems.sliding import Sliding
+from hmc.problems.cube import RubiksCube
+from hmc.problems.lightsout import LightsOut
 
-def evaluate(agent: PQN, env: gym.vector.VectorEnv) -> tuple[float, float]:
-    dones = torch.full([env.num_envs], False, dtype=torch.bool, device=tut.get_torch_cube_device())
-    returns = torch.zeros(env.num_envs, dtype=torch.float32, device=tut.get_torch_cube_device())
+# TODO: move `evaluate` and `evaluate_beam` to hmc/utils/solver.py to have only a single implementation
+def evaluate_beam(
+    agent: PQN | PQNPlus,
+    problem: Problem,
+    scramble_len: int,
+    time_limit: int,
+    beam_width: int,
+    num_evals: int,
+) -> tuple[float, float]:
+    def heuristic(stategoals: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        return agent.predict_q(stategoals).max(1).values
 
-    states = env.reset()[0]
-    while not dones.all():
-        actions = agent.predict_egreedy_actions(states, 0)
-        states, rewards, terminations, truncations, _ = env.step(actions)
+    def heuristic_sa(stategoals: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+        return agent.predict_q(stategoals)
 
-        returns += rewards * ~dones
-        dones |= terminations | truncations
+    solved = 0
+    solution_len_sum = 0
+    for _ in range(num_evals):
+        goal = problem.new_state()
+        problem.scramble(goal, scramble_len)
 
-    return returns.mean().item(), returns.std().item()
+        # solution_len = sol.solve_beam_uniuniversal(problem, goal, heuristic, time_limit, beam_width, 0, True)
+        solution_len = sol.solve_beam_uniuniversal_stateaction(
+            problem, goal, heuristic_sa, time_limit, beam_width, 0, True
+        )
 
-def make_train_data(
-    agent: PQN, episodes: tbuf.TorchReplayEpData, l: float, gamma: float
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Returns batched data for training
-    as triple: states, actions, target_values
-
-    Args:
-        `agent`: PQN agent
-        `episodes`: episodes to train on
-        `l`: lambda for Q(lambda) return
-        `gamma`: discount factor
-    """
-    B = episodes.batch_size()
-    T = episodes.states.shape[1]
-    next_q = agent.predict_q(episodes.next_states.reshape(B * T, -1)).reshape(B, T, -1)
-    next_v = next_q.max(-1).values
-
-    assert torch.all(episodes.lengths > 0)
-    last_next_stategoals = episodes.next_states[range(B), episodes.lengths - 1].reshape(B, 2, -1)
-    end_terminated = torch.all(last_next_stategoals[:, 0] == last_next_stategoals[:, 1], dim=1)
-
-    returns = torch.zeros_like(episodes.rewards)
-
-    # last possible transition manually
-    # [-1] is either the last -> we use ~end_terminated
-    #      or it is not valid -> we do not care anyway about this value
-    returns[:, -1] = episodes.rewards[:, -1] + ~end_terminated * gamma * next_v[:, -1]
-
-    for t in range(T - 2, -1, -1):
-        # this transition ended/terminated
-        dones = (t + 1) == episodes.lengths
-        terminations = dones & end_terminated
-
-        #       terminated: 0                                    -->  handled one below
-        # truncated ~ done: next_v[t]                            -->  ll = 0
-        #            !done: l * R[t+1] + (1 - l) * next_v[:, t]  -->  ll = l
-        ll = l * ~dones  # typechecker is wrong: `dones` is always a Tensor, not a bool
-        gl_next = ll * returns[:, t + 1] + (1 - ll) * next_v[:, t]
-        returns[:, t] = episodes.rewards[:, t] + ~terminations * gamma * gl_next
-
-    # unroll returns
-    mask = (
-        torch.arange(episodes.states.shape[1], device=tut.get_torch_cube_device())[
-            None, :
-        ]
-        < episodes.lengths[:, None]
-    )
-    returns_unrolled = returns[mask]
-    episodes_unrolled = episodes.unroll()
-    states_unrolled = episodes_unrolled.states
-    actions_unrolled = episodes_unrolled.actions
-    # TODO: refine this function
-    return states_unrolled, actions_unrolled, returns_unrolled
+        if solution_len >= 0:
+            solved += 1
+            solution_len_sum += solution_len
+    return solved / num_evals, solution_len_sum / (solved + 1e-8)
 
 
-def train_pqn(args: argparse.Namespace) -> PQN:
+def train_pqn(args: argparse.Namespace) -> PQN | PQNPlus:
+
+    if args.problem == "sliding":
+        problem = Sliding(args.env_size, tut.get_torch_cube_device(), args.seed)
+    elif args.problem == "cube":
+        problem = RubiksCube(args.env_size, tut.get_torch_cube_device(), args.seed)
+    elif args.problem == "lightsout":
+        problem = LightsOut(args.env_size, tut.get_torch_cube_device(), args.seed)
+    else:
+        raise ValueError
 
     env = gym.make_vec(
-        args.env,
-        size=args.env_size,
-        num_envs=args.num_envs,
+        "hmc/ProblemEnv-v0",
+        args.num_envs,
+        problem=problem,
         scramble_len=args.scramble_len,
         ep_limit=args.ep_limit,
-        device=tut.get_torch_cube_device(),
-    )
-    eval_env = gym.make_vec(
-        args.env,
-        size=args.env_size,
-        num_envs=args.eval_num_envs,
-        scramble_len=args.eval_scramble_len,
-        ep_limit=args.eval_ep_limit,
-        device=tut.get_torch_cube_device(),
     )
 
     assert type(env.single_observation_space) == gym.spaces.MultiDiscrete
@@ -103,25 +71,38 @@ def train_pqn(args: argparse.Namespace) -> PQN:
     ob_space = env.single_observation_space
     act_space = env.single_action_space
 
-    agent = PQN(
-        args,
-        ob_space.nvec[0],
-        ob_space.shape[0],
-        act_space.n.item(),
-        tut.get_torch_cube_device(),
-    )
+    if args.agent == "pqn":
+        agent = PQN(
+            args,
+            ob_space.nvec[0],
+            ob_space.shape[0],
+            act_space.n.item(),
+            False,
+            tut.get_torch_cube_device(),
+        )
+    elif args.agent == "pqn_plus":
+        agent = PQNPlus(
+            args,
+            ob_space.nvec[0],
+            ob_space.shape[0],
+            act_space.n.item(),
+            tut.get_torch_cube_device(),
+        )
+    else:
+        raise ValueError(f"Invalid agent name '{args.agent}'!")
 
     states = env.reset()[0]
-    replay_ep_buffer = tbuf.TorchEpisodeBuffer(
+    ep_buffer = tbuf.TorchEpisodeBuffer(
         args.num_envs,
         states[0].shape,
         args.ep_limit,
-        tut.get_torch_cube_device(),
+        problem._device,
         states.dtype,
     )
+    replay_buffer = tbuf.TorchReplayEpBuffer()
+
     if args.reward_type == "reward":
         env = PositiveWrapperVec(env)
-        eval_env = PositiveWrapperVec(eval_env)
 
     training = True
     step = 0
@@ -132,37 +113,45 @@ def train_pqn(args: argparse.Namespace) -> PQN:
         epsilon = np.interp(
             step, [1, args.epsilon_final_at], [args.epsilon, args.epsilon_final]
         )
-        actions = agent.predict_egreedy_actions(states, epsilon)
+        actions = agent.predict_actions(states, epsilon)
         next_states, rewards, terminations, truncations, _ = env.step(actions)
 
         # gather train_data
-        replay_data = tbuf.TorchReplayData(
+        transitions = tbuf.TorchReplayData(
             states, actions, rewards, terminations, truncations, next_states
         )
-        eps = replay_ep_buffer.store_transitions(replay_data)
+        eps = ep_buffer.store_transitions(transitions)
 
         # train
-        gym.wrappers.NumpyToTorch
-        if eps.batch_size() > 0:
+        if eps.batch_size() > 0: # if any episode finished
             # augment with HER
-            train_eps = [eps]
+            replay_buffer.add(eps)
             for _ in range(args.her_future):
-                train_eps.append(ther.torch_make_her_future(eps, args.reward_type))
+                replay_buffer.add(ther.torch_make_her_future(eps, args.reward_type))
             for _ in range(args.her_final):
-                train_eps.append(ther.torch_make_her_final(eps, args.reward_type))
-            train_eps = tbuf.TorchReplayEpData.concatenate(train_eps)
+                replay_buffer.add(ther.torch_make_her_final(eps, args.reward_type))
 
-            # compute target values
-            train_states, train_actions, train_targets = make_train_data(
-                agent, train_eps, args.lambd, args.gamma
-            )
-
-            # train step
-            agent.train(train_states, train_actions, train_targets)
+            # train if enough data has been collected
+            if replay_buffer.current_data_size() >= args.min_train_size:
+                train_eps = replay_buffer.pop_data()
+                agent.train(train_eps)
 
         if step % args.eval_each == 0:
-            mean, std = evaluate(agent, eval_env)
-            print(f"Evaluation after {step} steps: {mean:.2f} +-{std:.2f}")
+            print(f"Evaluation after {step} steps: ", end="", flush=True)
+            solved, length = evaluate_beam(
+                agent,
+                problem,
+                args.eval_scramble_len,
+                args.eval_ep_limit,
+                args.beam_size,
+                args.eval_num_envs
+            )
+            print(f"solved {solved:.2f}, length {length:.2f}.")
+            # mean, std = evaluate(agent, eval_env)
+            # print(f"Evaluation after {step} steps: {mean:.2f} +-{std:.2f}")
+
+        if step >= args.max_steps:
+            training = False
 
         states = next_states
 

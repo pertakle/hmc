@@ -4,6 +4,8 @@ import torch
 _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def set_torch_cube_device(device: torch.device) -> None:
+    assert type(device) == torch.device, "Invalid device type!"
+    global _DEVICE
     _DEVICE = device
 
 def get_torch_cube_device() -> torch.device:

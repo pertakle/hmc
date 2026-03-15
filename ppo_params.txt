@@ -1,0 +1,1 @@
+python main.py --agent ppo --her_final 1 --learning_rate 3e-4 --batch_size 32 --min_train_size 4096 --clip_epsilon 0.25 --entropy_reg 0.01 --last_layer_init_scale 0.1 --max_steps 50_000

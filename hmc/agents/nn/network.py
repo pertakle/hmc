@@ -21,6 +21,34 @@ class Identity(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
 
+
+class Sum(torch.nn.Module):
+    def __init__(self, dim: int = -1) -> None:
+        super().__init__()
+        self._dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.sum(self._dim)
+
+class ResBlock(torch.nn.Module):
+    def __init__(self, size: int, Linear: type, Norm: type, Activation: type, Norm2: type) -> None:
+        super().__init__()
+        self.block = torch.nn.Sequential(
+            Linear(size, size),
+            Norm(size),
+            Activation(),
+            Linear(size, size),
+            Norm2(size)
+        )
+        self.post_act = Activation()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.block(x)
+        h = x + h
+        h = self.post_act(h)
+        return h
+
+
 class ResMLP(torch.nn.Module):
     def __init__(
         self,
@@ -32,8 +60,19 @@ class ResMLP(torch.nn.Module):
         out_features: int,
         noisy: bool,
         norm: str | None = None,
-        norm_last_only: bool = True
+        norm_last_only: bool = True,
+        activation: str = "relu",
     ) -> None:
+        """
+        norm:
+            - "layer"
+            - "batch"
+            - None (default)
+
+        activation:
+            - "relu" (default)
+            - "silu" aka swish
+        """
         super().__init__()
 
         Linear = NoisyLinear if noisy else torch.nn.Linear
@@ -42,59 +81,104 @@ class ResMLP(torch.nn.Module):
         if norm is not None:
             if norm == "layer":
                 NormLast = torch.nn.LayerNorm
-            elif norm == "barch":
+            elif norm == "batch":
                 NormLast = torch.nn.BatchNorm1d
             else:
-                assert False, "Unknown type of normalization!"
+                raise ValueError("Unknown normalization layer!")
         Norm = Identity if norm_last_only else NormLast
 
-        assert n1 > 0, "Too much work to handle."
-        assert n2 > 0, "Too much work to handle."
+        if activation == "relu":
+            Activation = torch.nn.ReLU
+        elif activation == "silu":
+            Activation = torch.nn.SiLU
+        else:
+            raise ValueError("Unknown activation function!")
+
+        oh_out = in_features * in_classes
+        has_l1 = n1 > 0
+        l1_in = oh_out
+        l1_out = n1
+
+        has_l2 = n2 > 0
+        l2_in = n1 if has_l1 else oh_out
+        l2_out = n2
+
+        out_in = l2_out if has_l2 else (l1_out if has_l1 else oh_out)
+
+        assert has_l2 or nr == 0, "Res blocks must have l2."
 
         self.one_hot = OneHot(in_classes)
 
         self.l1 = torch.nn.Sequential(
-            Linear(in_features * in_classes, n1),
-            Norm(n1),
-            torch.nn.ReLU()
+            Linear(l1_in, l1_out),
+            Norm(l1_out),
+            Activation(),
         )
         self.l2 = torch.nn.Sequential(
-            Linear(n1, n2),
-            Norm(n2),
-            torch.nn.ReLU()
-        )
-        self.res_blocks = torch.nn.ParameterList()
-        for i in range(nr):
-            self.res_blocks.append(
-                torch.nn.Sequential(
-                    Linear(n2, n2),
-                    Norm(n2),
-                    torch.nn.ReLU(),
-                    Linear(n2, n2),
-                    NormLast(n2) if i == nr - 1 else Norm(n2)
-                )
-            )
+            Linear(l2_in, l2_out),
+            Norm(l2_out),
+            Activation()
+        ) if has_l2 else Identity()
 
-        self.out = Linear(n2, out_features)
+        self.res_blocks = torch.nn.Sequential(
+            *(
+                ResBlock(n2, Linear, Norm, Activation, NormLast if i == nr - 1 else Norm)
+                for i in range(nr)
+            )
+        )
+
+        self.out = Linear(out_in, out_features)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         hidden = self.one_hot(x)
         hidden = self.l1(hidden)
         hidden = self.l2(hidden)
-
-        for block in self.res_blocks:
-            skip = hidden
-            hidden = block(hidden)
-            hidden = hidden + skip
-            hidden = torch.nn.functional.relu(hidden)
-
+        hidden = self.res_blocks(hidden)
         out = self.out(hidden)
         return out
 
 
+class RResMLP(torch.nn.Module):
+    def __init__(self, network: ResMLP) -> None:
+        out = network.out
+        self.lstm = torch.nn.LSTMCell(out.in_features, out.out_features)
+        network.out = Identity()  # type: ignore
+        self.backbone = network
+
+    def forward(
+        self, x: torch.Tensor, hx: torch.Tensor, cx: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        hidden = self.backbone(x)
+        return self.lstm(hidden, (hx, cx))
 
 
+class ResMLPPlus(torch.nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        in_classes: int,
+        n1: int,
+        n2: int,
+        nr: int,
+        actions: int,
+        atoms: int,
+        norm: str | None = None,
+        norm_last_only: bool = True,
+    ) -> None:
+        super().__init__()
+        self.actions = actions
+        self.atoms = atoms
+        self.value_head = ResMLP(
+            in_features, in_classes, n1, n2, nr, atoms, True, norm, norm_last_only
+        )
+        self.adv_head = ResMLP(
+            in_features, in_classes, n1, n2, nr, actions * atoms, True, norm, norm_last_only
+        )
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        value = self.value_head(x).reshape(-1, 1, self.atoms)
+        adv = self.adv_head(x).reshape(-1, self.actions, self.atoms)
+        return value + adv - adv.mean(1, keepdim=True)
 
 
 class DeepCubeACore(torch.nn.Module):
@@ -124,7 +208,9 @@ class DeepCubeACore(torch.nn.Module):
         ```
     """
 
-    def __init__(self, in_features: int, noisy: bool = False, norm: str|None = None) -> None:
+    def __init__(
+        self, in_features: int, noisy: bool = False, norm: str | None = None
+    ) -> None:
 
         def res_block():
             nonlocal Linear

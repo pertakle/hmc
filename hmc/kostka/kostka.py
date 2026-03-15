@@ -6,14 +6,17 @@ ColorT = np.uint8
 Kostka = np.ndarray[Tuple[6, 3, 3], np.dtype[ColorT]]
 
 
-def nova_kostka() -> Kostka:
+def _nova_kostka() -> Kostka:
     kostka = np.zeros((6, 3, 3), dtype=ColorT)
     for barva in range(6):
         kostka[barva] = barva  # + 1
     return kostka
 
 
-SLOZENA_KOSTKA = nova_kostka()
+_SLOZENA_KOSTKA = _nova_kostka()
+
+def nova_kostka() -> Kostka:
+    return _SLOZENA_KOSTKA.copy()
 
 
 def print_kostku(kostka: Kostka) -> None:
@@ -32,7 +35,7 @@ def je_stejna(kostka1: Kostka, kostka2: Kostka) -> bool:
 
 
 def je_slozena(kostka: Kostka) -> bool:
-    return je_stejna(kostka, SLOZENA_KOSTKA)
+    return je_stejna(kostka, _SLOZENA_KOSTKA)
 
 
 def tahni_tah(kostka: Kostka, tah: int) -> None:

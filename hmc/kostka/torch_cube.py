@@ -7,25 +7,28 @@ TColorT = torch.long
 TCube = torch.Tensor
 
 
-def new_cube() -> TCube:
+def _new_cube() -> TCube:
     cube = torch.zeros((6, 3, 3), dtype=TColorT, device=tut._DEVICE)
     for colour in range(6):
         cube[colour] = colour  # + 1
     return cube
 
 
-_SOLVED_CUBE = new_cube()
+_SOLVED_CUBE = _new_cube()
+
+def new_cube() -> TCube:
+    return _SOLVED_CUBE.clone()
 
 
 def print_cube(cube: TCube) -> None:
-    cube = cube.cpu().numpy()
-    for line in cube[0]:
+    cube_np = cube.cpu().numpy()
+    for line in cube_np[0]:
         print(" " * 7, line, sep="")
     for line_index in range(3):
-        for face in cube[1:5]:
+        for face in cube_np[1:5]:
             print(face[line_index], end="")
         print()
-    for line in cube[5]:
+    for line in cube_np[5]:
         print(" " * 7, line, sep="")
 
 
@@ -62,6 +65,7 @@ def make_moves(cube: TCube, moves: Iterable[int]) -> None:
 
 
 def generate_random_moves(num_moves: int = 1) -> torch.Tensor:
+    assert False, "Deprecated! Use Problem class instead!"
     assert num_moves > 0, "The number of moves must be at least one!"
     shape = (num_moves,)
     return torch.randint(1, 6, shape) * (
@@ -71,6 +75,7 @@ def generate_random_moves(num_moves: int = 1) -> torch.Tensor:
 
 
 def scramble(cube: TCube, num_moves: int) -> None:
+    assert False, "Deprecated! Use Problem class instead!"
     make_moves(cube, generate_random_moves(num_moves))  # type: ignore
 
 

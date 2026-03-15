@@ -1,4 +1,6 @@
 from ..nn.network import DeepCubeACore, OneHot
+from hmc.utils.wrappers import torch_init_with_orthogonal_and_zeros
+from hmc.agents.nn.network import ResMLP
 from ..nn.noisy_linear import NoisyLinear
 from hmc.utils import wrappers
 import numpy as np
@@ -61,24 +63,30 @@ class Rainbow:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __init__(
-        self, args: argparse.Namespace, obs_bound: int, obs_size: int, actions: int
+        self, args: argparse.Namespace, obs_bound: int, obs_size: int, num_actions: int
     ) -> None:
         super().__init__()
 
         self.hidden_size = 512
-        self.num_actions = actions
+        self.num_actions = num_actions
         self.num_atoms = args.atoms
         self.atoms_np, self.atom_delta = np.linspace(args.v_min, args.v_max, args.atoms, retstep=True)
         self.atoms_torch = torch.tensor(self.atoms_np, device=Rainbow.device)
 
+        # TODO: add Dueling
+        self.model = ResMLP(
+            obs_size, obs_bound, args.n1, args.n2, args.nr, num_actions,
+            noisy=True, norm=None, norm_last_only=True
+        ).apply(torch_init_with_orthogonal_and_zeros).to(self.device)
+
         self.network = torch.nn.Sequential(
             OneHot(obs_bound),
             DeepCubeACore(obs_size * obs_bound, True),
-            DuelingDQN(1000, actions, self.hidden_size, self.num_atoms),
+            DuelingDQN(1000, num_actions, self.hidden_size, self.num_atoms),
 
             #NoisyLinear(obs_size * obs_bound, 1000),
             #NoisyLinear(1000, actions * self.num_atoms),
-            Reshape((-1, actions, self.num_atoms))
+            Reshape((-1, num_actions, self.num_atoms))
         ).to(Rainbow.device)
 
         self.opt = torch.optim.Adam(self.network.parameters(), lr=args.learning_rate)

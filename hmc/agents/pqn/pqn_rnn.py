@@ -1,0 +1,88 @@
+import torch
+from hmc.agents.nn.network import ResMLP, RResMLP
+import argparse
+import hmc.kostka.torch_cube_vec as tcv
+from hmc.utils.wrappers import torch_init_with_orthogonal_and_zeros
+
+
+class RPQN:
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        obs_bound: int,
+        obs_size: int,
+        num_actions: int,
+        device: torch.device,
+    ) -> None:
+        self.device = device
+
+        self.num_actions = num_actions
+        self.clip_grad_norm = args.clip_grad_norm
+        self.model = RResMLP(
+            ResMLP(
+                obs_size,
+                obs_bound,
+                args.n1,
+                args.n2,
+                args.nr,
+                num_actions,
+                noisy=True,
+                norm="layer",
+                norm_last_only=True,
+            )
+        )
+        self.model.apply(torch_init_with_orthogonal_and_zeros).to(self.device)
+
+        self.opt = torch.optim.AdamW(
+            self.model.parameters(), args.learning_rate, weight_decay=0.001
+        )
+        self.loss = torch.nn.MSELoss()
+
+    def predict_egreedy_actions(
+        self, states: torch.Tensor, epsilon: float
+    ) -> torch.Tensor:
+        if epsilon > 0:
+            self.model.train()
+        else:
+            self.model.eval()
+        return self.predict_q(states).argmax(-1)
+        batch_size = len(states)
+        noise = torch.rand(batch_size, device=self.device) < epsilon
+        random_actions = torch.randint(
+            0, self.num_actions, (batch_size,), device=self.device
+        )
+        return noise * random_actions + ~noise * self.predict_q(states).argmax(-1)
+
+    def _successors(self, stategoals: torch.Tensor) -> torch.Tensor:
+        B = stategoals.shape[0]
+        F = stategoals.shape[1] // 2
+        states = stategoals[:, :F]
+        goals = stategoals[:, F:]
+
+        successors = tcv.make_all_moves_vec(states.reshape(B, 6, 3, 3)).reshape(
+            B, -1, 6, 3, 3
+        )
+        ssg = torch.concat((successors, goals[:, None]), dim=1)
+        return ssg
+
+    def predict_q(self, states: torch.Tensor) -> torch.Tensor:
+        self.model.eval()
+        with torch.no_grad():
+            # B = states.shape[0]
+            # FF = states.shape[1]
+            # succ = self._successors(states).reshape(-1, FF)
+            # return self.model(succ).reshape(B, -1, FF)
+            return self.model(states)
+
+    def train(
+        self, states: torch.Tensor, actions: torch.Tensor, targets: torch.Tensor
+    ) -> None:
+        self.model.train()
+
+        predictions = self.model(states)[range(len(states)), actions]
+        loss = self.loss(predictions, targets)
+
+        self.opt.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
+        self.opt.step()
