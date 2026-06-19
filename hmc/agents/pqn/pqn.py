@@ -26,6 +26,7 @@ def unroll_train_data(
 
     return states_unrolled, actions_unrolled, returns_unrolled
 
+
 class PQN:
     def __init__(
         self,
@@ -55,7 +56,8 @@ class PQN:
                 num_actions,
                 noisy=noisy,
                 norm="layer",
-                norm_last_only=True,
+                # norm_last_only=True,
+                norm_last_only=False,
             )
             .apply(torch_init_with_orthogonal_and_zeros)
             .to(self.device)

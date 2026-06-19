@@ -43,7 +43,8 @@ class PQNPlus:
                 num_actions,
                 args.atoms,
                 norm="layer",
-                norm_last_only=True,
+                # norm_last_only=True,
+                norm_last_only=False,
             )
             .apply(torch_init_with_orthogonal_and_zeros)
             .to(self.device)
